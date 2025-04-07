@@ -17,7 +17,7 @@ from utils.page_util import PageResponseModel
 from utils.response_util import ResponseUtil
 
 stockController = APIRouter(prefix='/api/system/stockInfo', dependencies=[Depends(LoginService.get_current_user)])
-
+#add
 @stockController.get(
     '/list', response_model=PageResponseModel, dependencies=[Depends(CheckUserInterfaceAuth('stock:list'))]
 )

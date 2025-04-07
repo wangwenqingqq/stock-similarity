@@ -8,6 +8,7 @@ CK_USERNAME = 'default'
 CK_PASSWORD = '123456'
 
 class StockDao:
+    #add
     @classmethod
     def get_stock_list(cls):
         client = Client(host=CK_HOST, port=CK_PORT, user=CK_USERNAME, password=CK_PASSWORD)

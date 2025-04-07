@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 from module_admin.annotation.pydantic_annotation import as_query
-
+#add
 
 class StockModel(BaseModel):
     """

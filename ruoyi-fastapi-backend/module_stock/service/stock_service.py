@@ -1,6 +1,6 @@
 from module_stock.dao.stock_dao import StockDao
 from module_admin.entity.vo.common_vo import CrudResponseModel
-
+#add
 class StockService:
     @classmethod
     def get_stock_list_services(cls):
