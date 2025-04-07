@@ -36,14 +36,18 @@ const usePermissionStore = defineStore(
         return new Promise(resolve => {
           // 向后端请求路由数据
           getRouters().then(res => {
+            // 处理后端返回的路由数据
             const sdata = JSON.parse(JSON.stringify(res.data))
             const rdata = JSON.parse(JSON.stringify(res.data))
             const defaultData = JSON.parse(JSON.stringify(res.data))
+            // 转换路由格式
             const sidebarRoutes = filterAsyncRouter(sdata)
             const rewriteRoutes = filterAsyncRouter(rdata, false, true)
             const defaultRoutes = filterAsyncRouter(defaultData)
+             // 处理动态路由
             const asyncRoutes = filterDynamicRoutes(dynamicRoutes)
             asyncRoutes.forEach(route => { router.addRoute(route) })
+            // 更新状态
             this.setRoutes(rewriteRoutes)
             this.setSidebarRouters(constantRoutes.concat(sidebarRoutes))
             this.setDefaultRoutes(sidebarRoutes)
@@ -73,6 +77,7 @@ function filterAsyncRouter(asyncRouterMap, lastRouter = false, type = false) {
         route.component = loadView(route.component)
       }
     }
+    // 递归处理子路由
     if (route.children != null && route.children && route.children.length) {
       route.children = filterAsyncRouter(route.children, route, type)
     } else {
@@ -115,10 +120,12 @@ function filterChildren(childrenMap, lastRouter = false) {
 export function filterDynamicRoutes(routes) {
   const res = []
   routes.forEach(route => {
+    // 检查权限
     if (route.permissions) {
       if (auth.hasPermiOr(route.permissions)) {
         res.push(route)
       }
+    // 检查角色
     } else if (route.roles) {
       if (auth.hasRoleOr(route.roles)) {
         res.push(route)
