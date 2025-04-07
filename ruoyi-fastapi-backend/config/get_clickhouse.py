@@ -2,7 +2,7 @@ from clickhouse_driver import Client
 from config.env import ClickHouseSettings
 
 settings = ClickHouseSettings()
-
+#add
 def get_clickhouse_client():
     """
     获取 ClickHouse 客户端连接
