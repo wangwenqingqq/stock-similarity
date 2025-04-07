@@ -3,13 +3,16 @@ import { getToken, setToken, removeToken } from '@/utils/auth'
 import { isHttp, isEmpty } from "@/utils/validate"
 import defAva from '@/assets/images/profile.jpg'
 
+// defineStore：Pinia 提供的函数，用于定义一个状态管理模块。
 const useUserStore = defineStore(
   'user',
   {
     state: () => ({
+      //token：用户的令牌，初始值从本地存储中获取。
       token: getToken(),
       id: '',
       name: '',
+      //avatar：用户的头像，初始值为空字符串。
       avatar: '',
       roles: [],
       permissions: []
@@ -21,6 +24,7 @@ const useUserStore = defineStore(
         const password = userInfo.password
         const code = userInfo.code
         const uuid = userInfo.uuid
+        //使用 Promise 封装登录请求，调用 login API 函数发起登录请求。
         return new Promise((resolve, reject) => {
           login(username, password, code, uuid).then(res => {
             setToken(res.token)
