@@ -1,3 +1,4 @@
+//axios：用于发送 HTTP 请求
 import axios from 'axios'
 import { ElNotification , ElMessageBox, ElMessage, ElLoading } from 'element-plus'
 import { getToken } from '@/utils/auth'
