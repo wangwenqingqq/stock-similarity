@@ -59,7 +59,7 @@ handle_sub_applications(app)
 handle_middleware(app)
 # 加载全局异常处理方法
 handle_exception(app)
-
+#add
 
 # 加载路由列表
 controller_list = [
