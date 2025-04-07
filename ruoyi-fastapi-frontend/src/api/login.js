@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-
+//包含了与用户认证相关的所有 API 请求函数，包括登录、注册、获取用户信息、登出和验证码获取。
 // 登录方法
 export function login(username, password, code, uuid) {
   const data = {
