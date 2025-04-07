@@ -1,7 +1,6 @@
 import { createWebHistory, createRouter } from 'vue-router'
 /* Layout */
 import Layout from '@/layout'
-
 /**
  * Note: 路由配置项
  *
@@ -81,6 +80,19 @@ export const constantRoutes = [
         component: () => import('@/views/system/user/profile/index'),
         name: 'Profile',
         meta: { title: '个人中心', icon: 'user' }
+      }
+    ]
+  },
+  // 添加股票信息路由
+  {
+    path: '/system/stock',
+    component: Layout,
+    children: [
+      {
+        path: 'index',
+        component: () => import('@/views/system/stockInfo/index.vue'),
+        name: 'StockInfo',
+        meta: { title: '股票信息', icon: 'stock' } // 这里的 icon 你可以根据实际情况修改
       }
     ]
   }
