@@ -59,7 +59,15 @@ class DataBaseSettings(BaseSettings):
             return 'postgres'
         return self.db_type
 
+class ClickHouseSettings(BaseSettings):
+    """
+        ClickHouse配置
+        """
 
+    ck_host: str = '10.20.173.3'
+    ck_port: int = 8123
+    ck_username: str = 'default'
+    ck_password: str = '123456'
 class RedisSettings(BaseSettings):
     """
     Redis配置
@@ -186,6 +194,12 @@ class GetConfig:
         return RedisSettings()
 
     @lru_cache()
+    def get_clickhouse_config(self):
+        """
+        获取ClickHouse配置
+        """
+        return ClickHouseSettings()
+    @lru_cache()
     def get_gen_config(self):
         """
         获取代码生成配置
@@ -238,6 +252,8 @@ JwtConfig = get_config.get_jwt_config()
 DataBaseConfig = get_config.get_database_config()
 # Redis配置
 RedisConfig = get_config.get_redis_config()
+# ClickHouse配置
+ClickHouseConfig = get_config.get_clickhouse_config()
 # 代码生成配置
 GenConfig = get_config.get_gen_config()
 # 上传配置
