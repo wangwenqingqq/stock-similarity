@@ -61,13 +61,18 @@ class DataBaseSettings(BaseSettings):
 
 class ClickHouseSettings(BaseSettings):
     """
-        ClickHouse配置
-        """
-
+    ClickHouse配置
+    """
     ck_host: str = '10.20.173.3'
-    ck_port: int = 8123
+    ck_port: int = 9000
     ck_username: str = 'default'
     ck_password: str = '123456'
+    # 添加超时参数
+    ck_connect_timeout: int = 10  # 连接超时（秒）
+    ck_send_receive_timeout: int = 30  # 发送接收超时（秒）
+    ck_sync_request_timeout: int = 5  # 同步请求超时（秒）
+    ck_compression: bool = True  # 启用压缩可能会提高性能
+
 class RedisSettings(BaseSettings):
     """
     Redis配置
