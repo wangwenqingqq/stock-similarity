@@ -83,14 +83,27 @@ export const constantRoutes = [
       }
     ]
   },
-  // 添加股票信息路由
+  // 添加股票k线和7日收益路由
+  {
+    path: '/system/stock',
+    component: Layout,
+    children: [
+      {
+        path: 'return',
+        component: () => import('@/views/system/stockInfo/return.vue'),
+        name: 'StockReturn',
+        meta: { title: '股票k线', icon: 'return' } // 这里的 icon 你可以根据实际情况修改
+      }
+    ]
+  },
+  // 添加股票展示路由
   {
     path: '/system/stock',
     component: Layout,
     children: [
       {
         path: 'index',
-        component: () => import('@/views/system/stockInfo/index.vue'),
+        component: () => import('@/views/system/stockInfo/show.vue'),
         name: 'StockInfo',
         meta: { title: '股票信息', icon: 'stock' } // 这里的 icon 你可以根据实际情况修改
       }
