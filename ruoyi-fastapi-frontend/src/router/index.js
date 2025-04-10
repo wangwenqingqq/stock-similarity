@@ -102,10 +102,23 @@ export const constantRoutes = [
     component: Layout,
     children: [
       {
-        path: 'index',
+        path: 'show',
         component: () => import('@/views/system/stockInfo/show.vue'),
         name: 'StockInfo',
         meta: { title: '股票信息', icon: 'stock' } // 这里的 icon 你可以根据实际情况修改
+      }
+    ]
+  },
+  // 添加股票相似度计算路由
+  {
+    path: '/system/stock',
+    component: Layout,
+    children: [
+      {
+        path: 'stockSimilarity',
+        component: () => import('@/views/system/stockInfo/similarity.vue'),
+        name: 'StockSimilarity',
+        meta: { title: '相似度计算', icon: 'similarity' } // 这里的 icon 你可以根据实际情况修改
       }
     ]
   }
