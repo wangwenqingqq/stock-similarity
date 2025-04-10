@@ -27,7 +27,7 @@ class StockDao:
         try:
             with Client(
                     host=settings.ck_host,
-                    port=9000,
+                    port=settings.ck_port,
                     user=settings.ck_username,
                     password=settings.ck_password,
                     connect_timeout=settings.ck_connect_timeout,
