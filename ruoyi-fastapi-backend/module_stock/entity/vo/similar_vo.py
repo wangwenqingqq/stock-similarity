@@ -8,17 +8,19 @@ class StockSimilarityRequest(BaseModel):
     stockCode: str  # 股票代码
     startDate: str  # 开始日期
     endDate: str  # 结束日期
+    sectionLevel: int #选择的行业细分
     indicators: List[str]  # 选择的指标
     similarityMethod: str  # 相似性计算方法
     useLLM: bool  # 是否使用大语言模型分析
     similarCount: int  # 返回相似股票的数量
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "stockCode": "000001",
                 "startDate": "2023-01-01",
                 "endDate": "2023-06-30",
+                "sectionLevel": 1,
                 "indicators": ["close", "high", "low", "turnover"],
                 "similarityMethod": "dtw",
                 "useLLM": True,
