@@ -4,6 +4,7 @@ from config.env import AppConfig
 from config.get_db import init_create_table
 from config.get_redis import RedisUtil
 from config.get_scheduler import SchedulerUtil
+from controller.similar_controller import similarController
 from exceptions.handle import handle_exception
 from middlewares.handle import handle_middleware
 from module_admin.controller.cache_controller import cacheController
@@ -27,7 +28,7 @@ from sub_applications.handle import handle_sub_applications
 from utils.common_util import worship
 from utils.log_util import logger
 from module_stock.controller.stock_controller import stockController
-
+from module_stock.controller.similar_controller import similarController
 
 # 生命周期事件
 @asynccontextmanager
@@ -81,6 +82,7 @@ controller_list = [
     {'router': commonController, 'tags': ['通用模块']},
     {'router': genController, 'tags': ['代码生成']},
     {'router': stockController, 'tags': ['股票信息']},
+    {'router': similarController, 'tags': ['股票相似度计算']},
 ]
 
 for controller in controller_list:
