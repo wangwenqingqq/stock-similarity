@@ -1,11 +1,11 @@
 import clickhouse_connect
 
-from config.env import ClickHouseSettings
+from config.env import ClickHouseConfig
 
-CK_HOST = ClickHouseSettings.ck_host
-CK_PORT = ClickHouseSettings.ck_port
-CK_USER_NAME = ClickHouseSettings.ck_user_name
-CK_PWD = ClickHouseSettings.ck_pwd
+CK_HOST = ClickHouseConfig.ck_host
+CK_PORT = ClickHouseConfig.ck_port
+CK_USER_NAME = ClickHouseConfig.ck_username
+CK_PWD = ClickHouseConfig.ck_password
 client = clickhouse_connect.get_client(host=CK_HOST, port=CK_PORT, username=CK_USER_NAME, password=CK_PWD)
 
 
