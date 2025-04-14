@@ -6,15 +6,10 @@ import os
 from fastdtw import fastdtw
 from clickhouse_driver import Client
 from module_stock.entity.vo.similar_vo import *
-from config.env import ClickHouseSettings
 import logging
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from utils import ck_util
 from utils.data_util import convert_result_to_dataframe
-from domain.extract_record_info import to_object_single
-
-settings = ClickHouseSettings()
 logger = logging.getLogger(__name__)
 
 
@@ -22,47 +17,70 @@ class SimilarDao:
     """股票数据访问对象，负责从数据源获取股票数据"""
 
     @classmethod
-    async def get_all_stocks(cls) -> List[Dict[str, str]]:
-        """获取所有可用的股票列表
+    async def get_section_stock_info(cls, section_code_list: list, start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        异步查询指定股票代码列表对应的所有股票的相关数据
+
+        Args:
+            section_code_list: 股票代码列表
+            start_date: 开始日期
+            end_date: 结束日期
 
         Returns:
-            List[Dict[str, str]]: 股票列表，每个股票包含代码和名称
+            pd.DataFrame: 包含多只股票数据的DataFrame
         """
         try:
-            # 使用线程池执行同步数据库操作
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, cls._get_all_stocks_sync)
+            return await loop.run_in_executor(None, cls._get_section_stock_info_sync, section_code_list, start_date,
+                                              end_date)
         except Exception as e:
-            logger.error(f"获取股票列表出错: {e}")
-            return []
+            logger.error(f"获取板块股票数据出错: {e}")
+            raise
 
     @classmethod
-    def _get_all_stocks_sync(cls) -> List[Dict[str, str]]:
-        """同步方法获取所有股票列表"""
+    def _get_section_stock_info_sync(cls, section_code_list: list, start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        同步方法查询指定股票代码列表对应的所有股票的相关数据
+
+        Args:
+            section_code_list: 股票代码列表
+            start_date: 开始日期
+            end_date: 结束日期
+
+        Returns:
+            pd.DataFrame: 包含多只股票数据的DataFrame
+        """
         try:
-            # 使用参考文件中的 ck_util 进行查询
-            query = """
-            SELECT DISTINCT code, code as name 
-            FROM ods_stock.ll_stock_daily_sharing 
-            WHERE category = 'stock'
-            GROUP BY code
-            ORDER BY code
+            COLUMNS_TO_READ = ['code', 'open', 'close', 'high', 'low', 'ycp', 'vol', 'timestamps']
+
+            if not section_code_list:
+                logger.warning("股票代码列表为空")
+                return pd.DataFrame(columns=COLUMNS_TO_READ)
+
+            query = f"""
+            SELECT 
+                code,
+                open,
+                close,
+                high,
+                low,
+                ycp,
+                vol,
+                timestamps
+            FROM ods_stock.ll_stock_daily_sharing
+            WHERE code IN ({', '.join(f"'{code}'" for code in section_code_list)})
+                AND category = 'stock'
+                AND timestamps >= toDate('{start_date}')
+                AND timestamps <= toDate('{end_date}')
+            ORDER BY code, timestamps
             """
-            logger.info(f"执行查询: {query}")
+
             result = ck_util.query(query)
-
-            stocks = []
-            # 假设 result 是包含(code, name)元组的列表
-            for row in result.result_rows:
-                stocks.append({"code": row[0], "name": row[1]})
-
-            logger.info(f"处理了 {len(stocks)} 条股票记录")
-            return stocks
+            # 将查询结果转换为 Pandas DataFrame
+            return convert_result_to_dataframe(result, COLUMNS_TO_READ)
         except Exception as e:
-            logger.error(f"获取股票列表出错: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return []
+            logger.error(f"执行板块股票数据查询出错: {e}")
+            raise
 
     @classmethod
     async def get_stock_info(cls, stock_code: str) -> Dict[str, Any]:
@@ -85,12 +103,11 @@ class SimilarDao:
     def _get_stock_info_sync(cls, stock_code: str) -> Dict[str, Any]:
         """同步方法获取单个股票基本信息"""
         try:
-            # 参考新提供的函数 get_stock_info
+            # 使用新的数据源 events_temp.lc_csiinduspe
             query = f"""
-            SELECT code as security_id, category as security_type, code as symbol
-            FROM ods_stock.ll_stock_daily_sharing
-            WHERE code = '{stock_code}'
-            AND category = 'stock'
+            SELECT SecuCode, SecuName
+            FROM events_temp.lc_csiinduspe
+            WHERE SecuCode = '{stock_code}'
             LIMIT 1
             """
 
@@ -108,10 +125,10 @@ class SimilarDao:
                 }
 
             row = result.result_rows[0]
-            # 仅使用 ll_stock_daily_sharing 表中可获得的信息
+            # 使用 lc_csiinduspe 表中的信息
             stock_info = {
-                "code": row[0],
-                "name": row[0],  # 使用代码作为名称
+                "code": row[0],  # SecuCode
+                "name": row[1],  # SecuName
                 "industry": "未知行业",  # 默认行业
                 "description": "没有可用的描述信息"  # 默认描述
             }
@@ -199,6 +216,87 @@ class SimilarDao:
             logger.error(traceback.format_exc())
             raise
 
+    @classmethod
+    async def get_stock_nums(cls, stock_code: str, section_level: int = 1) -> pd.DataFrame:
+        """获取股票行业分类数据
+
+        Args:
+            stock_code: 股票代码
+            section_level: 行业分类级别，默认为1
+
+        Returns:
+            pd.DataFrame: 行业分类数据
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, cls._get_stock_nums_sync, stock_code, section_level)
+        except Exception as e:
+            logger.error(f"获取股票行业分类数据出错 {stock_code}: {e}")
+            raise
+
+    @classmethod
+    def _get_stock_nums_sync(cls, stock_code: str, section_level: int = 1) -> pd.DataFrame:
+        """同步方法获取股票行业分类数据"""
+        COLUMNS_TO_READ = ['SecuCode', 'SecuAbbr', 'IndustryName', 'FirstIndustryCode', 'FirstIndustryName']
+
+        query = f"""
+        SELECT * FROM events_temp.lc_csiinduspe WHERE SecuCode = '{stock_code}'
+        """
+
+        result = ck_util.query(query)
+        # 将查询结果转换为 Pandas DataFrame
+        df = pd.DataFrame(result.result_rows, columns=result.column_names)
+
+        return df
+
+    @classmethod
+    async def get_stock(cls, stock_code: str, code: str, board: int, code_type: str, is_st: int) -> tuple:
+        """获取符合条件的股票代码和名称列表
+
+        Args:
+            stock_code: 需要排除的股票代码
+            code: 条件代码值
+            board: 板块值
+            code_type: 查询的列名
+            is_st: 是否为ST股票，1表示是，0表示否
+
+        Returns:
+            tuple: 包含股票代码列表和股票名称列表的元组
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, cls._get_stock_sync, stock_code, code, board, code_type, is_st)
+        except Exception as e:
+            logger.error(
+                f"获取股票列表出错，参数：stock_code={stock_code}, code={code}, board={board}, code_type={code_type}, is_st={is_st}: {e}")
+            raise
+
+    @classmethod
+    def _get_stock_sync(cls, stock_code: str, code: str, board: int, code_type: str, is_st: int) -> tuple:
+        """同步方法获取符合条件的股票代码和名称列表"""
+        column_name = code_type
+        try:
+            if is_st == 1:
+                query = (
+                    f"SELECT SecuName,SecuCode FROM events_temp.lc_csiinduspe WHERE {column_name} = '{code}' AND board = {board} AND ("
+                    f"SecuName LIKE 'ST%' OR SecuName LIKE '*ST%');")
+            else:
+                query = (
+                    f"SELECT SecuName,SecuCode FROM events_temp.lc_csiinduspe WHERE {column_name} = '{code}' AND board = {board} AND NOT "
+                    f"(SecuName LIKE 'ST%' OR SecuName LIKE '*ST%');")
+
+            result = ck_util.query(query)
+            # 将查询结果转换为 Pandas DataFrame
+            df = pd.DataFrame(result.result_rows, columns=result.column_names).pipe(
+                lambda x: x[x['SecuCode'] != stock_code]).reset_index(drop=True)
+
+            stock_code_list = df['SecuCode'].tolist()
+            stock_name_list = df['SecuName'].tolist()
+
+            return stock_code_list, stock_name_list
+        except Exception as e:
+            logger.error(f"执行股票查询出错: {e}")
+            raise
     @classmethod
     async def get_stock_data_before_event(cls, stock_code: str, ts_time: str, day_far: int,
                                           day_near: int) -> pd.DataFrame:
@@ -330,111 +428,6 @@ class SimilarDao:
 
         return df
 
-    @classmethod
-    async def get_event_stock_data(cls, extract_record, before_days: int, after_days: int) -> pd.DataFrame:
-        """获取事件前后的股票数据
-
-        Args:
-            extract_record: 包含股票事件信息的对象
-            before_days: 事件前的天数
-            after_days: 事件后的天数
-
-        Returns:
-            pd.DataFrame: 股票历史数据
-        """
-        try:
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, cls._get_event_stock_data_sync, extract_record, before_days,
-                                              after_days)
-        except Exception as e:
-            logger.error(f"获取事件前后股票数据出错: {e}")
-            raise
-
-    @classmethod
-    def _get_event_stock_data_sync(cls, extract_record, before_days: int, after_days: int) -> pd.DataFrame:
-        """同步方法获取事件前后的股票数据"""
-        COLUMNS_TO_READ = ['code', 'open', 'close', 'high', 'low', 'timestamps', 'period']
-        ts_time = extract_record.TStime
-        tr_time = extract_record.TStime  # 这里使用的是TStime，如果需要TRtime应该是extract_record.TRtime
-        security_id = str(extract_record.securityId)
-
-        query = f"""
-        WITH
-        -- 计算 TStime 的前 before_days+1 个日期范围的开始日期和结束日期
-        start_date_before AS (
-            SELECT addDays(toDate('{ts_time}'), -({before_days} + 1)) AS start_date,
-                toDate('{ts_time}') - INTERVAL 1 DAY AS end_date
-        ),
-        -- 计算 TRtime 的后 after_days+1 个日期范围的开始日期和结束日期
-        start_date_after AS (
-            SELECT toDate('{tr_time}') + INTERVAL 1 DAY AS start_date,
-                addDays(toDate('{tr_time}'), {after_days} + 1) AS end_date
-        ),
-        -- 查询 TStime 日期范围之前的数据并添加行号和 period 列
-        before_data AS (
-            SELECT *,
-                row_number() over (partition by code order by timestamps desc) AS row_num,
-                0 AS period
-            FROM ods_stock.ll_stock_daily_sharing
-            WHERE code = '{security_id}'
-                AND category = 'stock'
-                AND timestamps <= (SELECT end_date FROM start_date_before)
-        ),
-        -- 查询 TRtime 日期范围之后的数据并添加行号和 period 列
-        after_data AS (
-            SELECT *,
-                row_number() over (partition by code order by timestamps asc) AS row_num,
-                2 AS period
-            FROM ods_stock.ll_stock_daily_sharing
-            WHERE code = '{security_id}'
-                AND category = 'stock'
-                AND timestamps > (SELECT start_date FROM start_date_after)
-        )
-        -- 合并两个结果集并按照 timestamps 排序
-        SELECT *
-        FROM (
-                SELECT *
-                FROM before_data
-                WHERE row_num <= {before_days} + 1
-                UNION ALL
-                SELECT *
-                FROM after_data
-                WHERE row_num <= {after_days} + 1
-            ) AS combined_data
-        ORDER BY timestamps
-        """
-
-        result = ck_util.query(query)
-        # 将查询结果转换为 Pandas DataFrame
-        df = convert_result_to_dataframe(result, COLUMNS_TO_READ)
-        return df
-
-    @classmethod
-    async def fetch_event_stock_list(cls, event_id: int) -> pd.DataFrame:
-        """获取指定事件下所有停牌重组的股票的停牌复牌日期
-
-        Args:
-            event_id: 事件ID
-
-        Returns:
-            pd.DataFrame: 包含股票ID、文章ID、停牌时间、复牌时间的DataFrame
-        """
-        try:
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, cls._fetch_event_stock_list_sync, event_id)
-        except Exception as e:
-            logger.error(f"获取事件股票列表出错: {e}")
-            raise
-
-    @classmethod
-    def _fetch_event_stock_list_sync(cls, event_id: int) -> pd.DataFrame:
-        """同步方法获取指定事件下所有停牌重组的股票的停牌复牌日期"""
-        # 由于没有ads_events.events_attr_extract_record表，我们模拟一个结果
-        logger.warning(f"无法从数据库获取事件{event_id}的股票列表，将返回模拟数据")
-
-        # 创建一个空的DataFrame
-        df = pd.DataFrame(columns=['security_id', 'article_id', 'TStime', 'TRtime'])
-        return df
 
     @classmethod
     async def calculate_rate_by_stock_list(cls, stock_code_list: List[str], timestamps: List[str]) -> pd.DataFrame:
