@@ -36,6 +36,12 @@
               :disabled-date="disabledEndDate"
             />
           </el-form-item>
+          <el-form-item label="相似性对比范围" prop="sectionLevel">
+              <el-select v-model="queryParams.sectionLevel" placeholder="相似性对比范围" style="width: 200px">
+                <el-option label="中证三级行业" :value=1 />
+                <el-option label="证监会一级行业" :value=0 />
+              </el-select>
+            </el-form-item>
           <el-form-item label="相似股票数量" prop="similarCount">
             <el-input-number
               v-model="queryParams.similarCount"
@@ -72,10 +78,10 @@
 
             <el-form-item label="指标选择" prop="indicators">
               <el-checkbox-group v-model="queryParams.indicators">
-                <el-checkbox label="turnoverRate">换手率</el-checkbox>
-                <el-checkbox label="highPriceChange">最高价涨幅</el-checkbox>
-                <el-checkbox label="lowPriceChange">最低价涨幅</el-checkbox>
-                <el-checkbox label="closePriceChange">收盘价涨幅</el-checkbox>
+                <el-checkbox label="turnover">换手率</el-checkbox>
+                <el-checkbox label="high">最高价涨幅</el-checkbox>
+                <el-checkbox label="low">最低价涨幅</el-checkbox>
+                <el-checkbox label="close">收盘价涨幅</el-checkbox>
               </el-checkbox-group>
             </el-form-item>
             
@@ -176,7 +182,8 @@
       stockCode: '',
       startDate: getDefaultStartDate(),
       endDate: getDefaultEndDate(),
-      indicators: ['closePriceChange'],
+      sectionLevel: 1,
+      indicators: ['close'],
       similarityMethod: 'pearson',
       useLLM: false,
       similarCount: 3
@@ -187,9 +194,7 @@
   
   // 图表实例
   let chartInstance = null;
-  
-  // 实例化计算工具
-  const calculator = new calculateStockSimilarity();
+
    // 定义最小和最大日期
     const minDate = new Date('1990-12-18')
     const maxDate = new Date('2025-02-19')
@@ -208,6 +213,10 @@
   // 生命周期钩子
   onMounted(() => {
     window.addEventListener('resize', handleResize);
+    console.log('组件已挂载');
+    console.log('showResults:', showResults.value);
+    console.log('similarStocks:', similarStocks.value);
+    console.log('chartRef:', chartRef.value);
   });
   
   onUnmounted(() => {
@@ -234,17 +243,38 @@ function getDefaultEndDate() {
       chartInstance.resize();
     }
   }
+  function formatDate(date) {
+  const d = new Date(date);
+  return d.toISOString().split('T')[0];
+}
   
   function getSimilarityClass(similarity) {
-    if (similarity > 0.8) return 'text-danger';
-    if (similarity > 0.6) return 'text-warning';
-    return 'text-primary';
+    // if (similarity > 0.2) return 'text-danger';
+    // if (similarity > 0.1) return 'text-warning';
+    // return 'text-primary';
+    const value = parseFloat(similarity);
+    if (value >= 0.2) return 'text-success';
+    if (value >= 0.1) return 'text-warning';
+    return 'text-danger';
   }
   
   function resetQuery() {
+  // 修改这里，确保表单引用存在
+  if (proxy.$refs["queryRef"]) {
     proxy.$refs["queryRef"].resetFields();
-    showResults.value = false;
+  } else {
+    // 如果引用不存在，则手动重置
+    queryParams.value.stockCode = '';
+    queryParams.value.startDate = getDefaultStartDate();
+    queryParams.value.endDate = getDefaultEndDate();
+    queryParams.value.sectionLevel = 1;
+    queryParams.value.indicators = ['close'];
+    queryParams.value.similarityMethod = 'pearson';
+    queryParams.value.useLLM = false;
+    queryParams.value.similarCount = 3;
   }
+  showResults.value = false;
+}
   
   async function calculateSimilarity() {
     if (!queryParams.value.stockCode) {
@@ -259,23 +289,30 @@ function getDefaultEndDate() {
     
     loading.value = true;
     showResults.value = true;
+      // 先等待DOM更新
+    await nextTick();
     
     try {
-      const result = await calculator.calculateSimilarity({
+      const result = await calculateStockSimilarity({
         stockCode: queryParams.value.stockCode,
-        startDate: queryParams.value.startDate,
-        endDate: queryParams.value.endDate,
+        startDate: formatDate(queryParams.value.startDate),
+        endDate: formatDate(queryParams.value.endDate),
+        sectionLevel: queryParams.value.sectionLevel,
         indicators: queryParams.value.indicators,
         similarityMethod: queryParams.value.similarityMethod,
         useLLM: queryParams.value.useLLM,
         similarCount: queryParams.value.similarCount
       });
+      console.log('后端返回数据:', result);
+      similarStocks.value = result.data.similarStocks;
+      llmAnalysis.value = result.data.llmAnalysis || '';
       
-      similarStocks.value = result.similarStocks;
-      llmAnalysis.value = result.llmAnalysis || '';
-      
+       // 再次等待DOM更新，确保结果区域已渲染
       await nextTick();
-      drawChart(result.performanceData);
+      // 再等一下以确保所有DOM都已渲染完成
+      setTimeout(() => {
+        drawChart(result.data.performanceData);
+      }, 100);
       ElMessage.success('分析完成');
     } catch (error) {
       console.error('计算相似性出错:', error);
@@ -284,32 +321,102 @@ function getDefaultEndDate() {
       loading.value = false;
     }
   }
+function drawChart(data) {
+  console.log('绘制图表数据:', data);
+  // 增加更多的防御性检查
+  if (!chartRef.value) {
+    console.error('图表引用不存在，可能是DOM尚未渲染');
+    // 更长的延迟
+    setTimeout(() => drawChart(data), 200);
+    return;
+  }
+  // 增强数据验证
+  if (!data) {
+    console.error('图表数据为空或未定义');
+    return;
+  }
   
-  function drawChart(data) {
-    if (!chartRef.value) return;
-    
-    // 如果已存在图表实例，先销毁
-    if (chartInstance) {
-      chartInstance.dispose();
-    }
-    
-    // 初始化图表
+  // 打印数据结构以便调试
+  console.log('数据类型:', typeof data);
+  if (typeof data === 'object') {
+    console.log('数据属性:', Object.keys(data));
+  console.log('图表引用状态:', chartRef.value);
+  
+  // 如果图表引用不存在，使用setTimeout尝试延迟绘制
+  if (!chartRef.value) {
+    console.warn('图表引用暂时不存在，将在100ms后重试');
+    setTimeout(() => {
+      if (chartRef.value) {
+        console.log('延迟后找到图表引用，开始绘制');
+        drawChartImplementation(data);
+      } else {
+        console.error('延迟后仍未找到图表引用，绘制失败');
+      }
+    }, 100);
+    return; 
+  }
+  
+  // 如果图表引用存在，直接绘制
+  drawChartImplementation(data);
+  }
+}
+
+// 将绘制逻辑抽离到单独的函数
+function drawChartImplementation(data) {
+  // 增强数据验证
+  if (!data) {
+    console.error('图表数据为空或未定义');
+    return;
+  }
+  
+  // 检查数据结构
+  if (!data || !data.stocks || !data.dates) {
+    console.error('图表数据结构不正确');
+    return;
+  }
+  console.log('准备绘制图表，数据:', {
+    stocks: data.stocks,
+    dates: data.dates
+  });
+  
+  // 如果已存在图表实例，先销毁
+  if (chartInstance) {
+    chartInstance.dispose();
+  }
+  
+  // 初始化图表
+  try {
     chartInstance = echarts.init(chartRef.value);
     
-    const series = data.stocks.map(stock => ({
-      name: `${stock.code} ${stock.name || ''}`,
-      type: 'line',
-      data: stock.returns,
-      smooth: true
-    }));
+    // 确保每个股票都有returns属性
+    const series = data.stocks.map(stock => {
+      if (!stock.data || !Array.isArray(stock.data)) {
+        console.warn(`股票 ${stock.code} 没有returns数据或格式不正确`);
+        return {
+          name: `${stock.code} ${stock.name || ''}`,
+          type: 'line',
+          data: [],
+          smooth: true
+        };
+      }
+      
+      return {
+        name: `${stock.code} ${stock.name || ''}`,
+        type: 'line',
+        data: stock.data,
+        smooth: true
+      };
+    });
     
     const option = {
+      // 图表配置保持不变
       tooltip: {
         trigger: 'axis',
         formatter: function(params) {
           let result = params[0].axisValue + '<br/>';
           params.forEach(param => {
-            result += `${param.seriesName}: ${param.value.toFixed(2)}%<br/>`;
+            const value = typeof param.value === 'number' ? param.value.toFixed(2) : 'N/A';
+            result += `${param.seriesName}: ${value}%<br/>`;
           });
           return result;
         }
@@ -357,7 +464,12 @@ function getDefaultEndDate() {
     };
     
     chartInstance.setOption(option);
+    console.log('图表绘制成功');
+  } catch (error) {
+    console.error('绘制图表时出错:', error);
   }
+}
+  
   </script>
   
   <style scoped>
