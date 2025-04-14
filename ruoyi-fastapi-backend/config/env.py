@@ -64,7 +64,7 @@ class ClickHouseSettings(BaseSettings):
     ClickHouse配置
     """
     ck_host: str = '10.20.173.3'
-    ck_port: int = 9000
+    ck_port: int = 8123
     ck_username: str = 'default'
     ck_password: str = '123456'
     # 添加超时参数
