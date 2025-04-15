@@ -16,6 +16,8 @@
               clearable
               style="width: 200px"
               @keyup.enter="calculateSimilarity"
+              @input="validateStockCode"
+              :class="{'is-error': stockCodeError}"
             />
           </el-form-item>
           <el-form-item label="开始日期" prop="startDate">
@@ -70,8 +72,11 @@
             <el-form-item label="相似性计算方法" prop="similarityMethod">
               <el-select v-model="queryParams.similarityMethod" placeholder="请选择计算方法" style="width: 100%">
                 <el-option label="皮尔森相关系数" value="pearson" />
+                <el-option label="欧氏距离" value="euclidean" />
+                <el-option label="协整性" value="coIntegration" />
                 <el-option label="动态规整算法" value="dtw" />
-                <el-option label="图匹配" value="graphMatching" />
+                <el-option label="图编辑距离" value="graphEditing" />
+                <el-option label="最大公共子图" value="maxCommonSubgraph" />
                 <el-option label="图神经网络" value="gnn" />
               </el-select>
             </el-form-item>
@@ -93,7 +98,6 @@
             </el-form-item>
           </el-form>
         </el-card>
-  
         <!-- 结果展示区域 -->
         <div v-if="showResults">
           <el-card class="box-card" v-loading="loading">
@@ -140,7 +144,7 @@
   </template>
   
   <script setup name="StockSimilarity">
-  import { ref, reactive, onMounted, onUnmounted, nextTick, toRefs } from 'vue';
+  import { ref, reactive, watch,onMounted, onUnmounted, nextTick, toRefs } from 'vue';
   import * as echarts from 'echarts/core';
   import { LineChart } from 'echarts/charts';
   import {
@@ -175,7 +179,6 @@
   const similarStocks = ref([]);
   const llmAnalysis = ref('');
   const chartRef = ref(null);
-  
   // 查询参数和表单
   const data = reactive({
     queryParams: {
@@ -253,8 +256,8 @@ function getDefaultEndDate() {
     // if (similarity > 0.1) return 'text-warning';
     // return 'text-primary';
     const value = parseFloat(similarity);
-    if (value >= 0.2) return 'text-success';
-    if (value >= 0.1) return 'text-warning';
+    if (value >= 0.9) return 'text-success';
+    if (value >= 0.6) return 'text-warning';
     return 'text-danger';
   }
   
