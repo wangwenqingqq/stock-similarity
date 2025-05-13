@@ -29,7 +29,8 @@ from utils.common_util import worship
 from utils.log_util import logger
 from module_stock.controller.stock_controller import stockController
 from module_stock.controller.similar_controller import similarController
-
+from module_stock.controller.follow_controller import followController
+from module_stock.controller.kLine_controller import klineController
 # 生命周期事件
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,8 +82,10 @@ controller_list = [
     {'router': cacheController, 'tags': ['系统监控-缓存监控']},
     {'router': commonController, 'tags': ['通用模块']},
     {'router': genController, 'tags': ['代码生成']},
-    {'router': stockController, 'tags': ['股票信息']},
-    {'router': similarController, 'tags': ['股票相似度计算']},
+    {'router': stockController, 'tags': ['计算管理-股票信息']},
+    {'router': similarController, 'tags': ['计算管理-股票相似度计算']},
+    {'router': followController, 'tags': ['计算管理-关注股票列表']},
+    {'router': klineController, 'tags': ['计算管理-股票K线展示'],}
 ]
 
 for controller in controller_list:
