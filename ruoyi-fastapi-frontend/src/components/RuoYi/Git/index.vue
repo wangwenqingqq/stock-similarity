@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-const url = ref('https://gitee.com/insistence2022/RuoYi-Vue3-FastAPI');
+const url = ref('https://github.com/wangwenqingqq/stock-similarity.git');
 
 function goto() {
   window.open(url.value)
