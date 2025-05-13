@@ -1,7 +1,7 @@
 <template>
   <div class="login">
     <el-form ref="loginRef" :model="loginForm" :rules="loginRules" class="login-form">
-      <h3 class="title">vfadmin后台管理系统</h3>
+      <h3 class="title">K线相似性计算工具</h3>
       <el-form-item prop="username">
         <el-input
           v-model="loginForm.username"
@@ -59,7 +59,7 @@
     </el-form>
     <!--  底部  -->
     <div class="el-login-footer">
-      <span>Copyright © 2024 insistence.tech All Rights Reserved.</span>
+      <span>Copyright © 2025 stock-similarity All Rights Reserved.</span>
     </div>
   </div>
 </template>
@@ -69,6 +69,7 @@ import { getCodeImg } from "@/api/login";
 import Cookies from "js-cookie";
 import { encrypt, decrypt } from "@/utils/jsencrypt";
 import useUserStore from '@/store/modules/user'
+import { tr } from "element-plus/es/locale/index.mjs";
 
 const userStore = useUserStore()
 const route = useRoute();
@@ -94,7 +95,7 @@ const loading = ref(false);
 // 验证码开关
 const captchaEnabled = ref(true);
 // 注册开关
-const register = ref(false);
+const register = ref(true);
 const redirect = ref(undefined);
 
 watch(route, (newRoute) => {
