@@ -1,8 +1,8 @@
 {
-  "name": "vfadmin",
+  "name": "stock-similarity",
   "version": "1.6.2",
-  "description": "vfadmin管理系统",
-  "author": "insistence",
+  "description": "K线相似性计算工具",
+  "author": "wxr",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -12,8 +12,8 @@
     "preview": "vite preview"
   },
   "repository": {
-    "type": "git",
-    "url": "https://gitee.com/insistence2022/RuoYi-Vue3-FastAPI.git"
+    "type": "github",
+    "url": "https://github.com/wangwenqingqq/stock-similarity.git"
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
