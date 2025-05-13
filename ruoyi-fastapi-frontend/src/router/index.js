@@ -83,45 +83,58 @@ export const constantRoutes = [
       }
     ]
   },
-  // 添加股票k线和7日收益路由
-  {
-    path: '/system/stock',
-    component: Layout,
-    children: [
-      {
-        path: 'return',
-        component: () => import('@/views/system/stockInfo/return.vue'),
-        name: 'StockReturn',
-        meta: { title: '股票k线', icon: 'return' } // 这里的 icon 你可以根据实际情况修改
-      }
-    ]
-  },
-  // 添加股票展示路由
-  {
-    path: '/system/stock',
-    component: Layout,
-    children: [
-      {
-        path: 'show',
-        component: () => import('@/views/system/stockInfo/show.vue'),
-        name: 'StockInfo',
-        meta: { title: '股票信息', icon: 'stock' } // 这里的 icon 你可以根据实际情况修改
-      }
-    ]
-  },
-  // 添加股票相似度计算路由
-  {
-    path: '/system/stock',
-    component: Layout,
-    children: [
-      {
-        path: 'stockSimilarity',
-        component: () => import('@/views/system/stockInfo/similarity.vue'),
-        name: 'StockSimilarity',
-        meta: { title: '相似度计算', icon: 'similarity' } // 这里的 icon 你可以根据实际情况修改
-      }
-    ]
-  }
+  // // 添加股票k线和7日收益路由
+  // {
+  //   path: '/stock',
+  //   component: Layout,
+  //   children: [
+  //     {
+  //       path: 'return',
+  //       component: () => import('@/views/stock/return.vue'),
+  //       name: 'StockReturn',
+  //       meta: { title: '股票K线展示', icon: 'return' } // 这里的 icon 你可以根据实际情况修改
+  //     }
+  //   ]
+  // },
+  // // 添加股票展示路由
+  // {
+  //   path: '/stock',
+  //   component: Layout,
+  //   children: [
+  //     {
+  //       path: 'show',
+  //       component: () => import('@/views/stock/show.vue'),
+  //       name: 'StockInfo',
+  //       meta: { title: '关注股票列表', icon: 'stock' } // 这里的 icon 你可以根据实际情况修改
+  //     }
+  //   ]
+  // },
+  // // 添加股票相似度计算路由
+  // {
+  //   path: '/stock',
+  //   component: Layout,
+  //   children: [
+  //     {
+  //       path: 'stockSimilarity',
+  //       component: () => import('@/views/stock/similarity.vue'),
+  //       name: 'StockSimilarity',
+  //       meta: { title: '相似度计算', icon: 'similarity' } // 这里的 icon 你可以根据实际情况修改
+  //     }
+  //   ]
+  // },
+  // // 添加股票相似度计算历史路由
+  // {
+  //   path: '/stock',
+  //   component: Layout,
+  //   children: [
+  //     {
+  //       path: 'stockHistory',
+  //       component: () => import('@/views/stock/index.vue'),
+  //       name: 'stockHistory',
+  //       meta: { title: 'K线计算历史', icon: 'history' } // 这里的 icon 你可以根据实际情况修改
+  //     }
+  //   ]
+  // }
 ]
 
 // 动态路由，基于用户权限动态去加载
