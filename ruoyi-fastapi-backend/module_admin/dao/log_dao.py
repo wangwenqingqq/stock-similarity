@@ -61,7 +61,18 @@ class OperationLogDao:
         :param operation_log: 操作日志对象
         :return: 新增校验结果
         """
-        db_operation_log = SysOperLog(**operation_log.model_dump())
+        # db_operation_log = SysOperLog(**operation_log.model_dump())
+        # 截断可能过长的字段
+        log_data = operation_log.model_dump()
+
+        # 如果现在没有修改数据库结构，则需要截断内容
+        if 'error_msg' in log_data and log_data['error_msg'] and len(log_data['error_msg']) > 1900:
+            log_data['error_msg'] = log_data['error_msg'][:1900] + "..."
+
+        if 'json_result' in log_data and log_data['json_result'] and len(log_data['json_result']) > 1900:
+            log_data['json_result'] = log_data['json_result'][:1900] + "..."
+
+        db_operation_log = SysOperLog(**log_data)
         db.add(db_operation_log)
         await db.flush()
 
