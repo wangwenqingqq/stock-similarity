@@ -1,10 +1,5 @@
 from typing import List, Dict, Any, Optional
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import os
-from fastdtw import fastdtw
-from clickhouse_driver import Client
 from module_stock.entity.vo.similar_vo import *
 import logging
 import asyncio

@@ -11,7 +11,6 @@ class StockSimilarityRequest(BaseModel):
     sectionLevel: int #选择的行业细分
     indicators: List[str]  # 选择的指标
     similarityMethod: str  # 相似性计算方法
-    useLLM: bool  # 是否使用大语言模型分析
     similarCount: int  # 返回相似股票的数量
 
     class Config:
@@ -53,7 +52,6 @@ class PerformanceData(BaseModel):
 class StockSimilarityResponse(BaseModel):
     similarStocks: List[SimilarStock]
     performanceData: PerformanceData
-    llmAnalysis: Optional[str] = None
 
 
 # 股票基本信息响应
