@@ -25,6 +25,7 @@ followController = APIRouter(
 class StockAddToWatchlistRequest(BaseModel):
     """股票添加到关注列表请求模型"""
     stock_code: str = Field(..., description="股票代码")
+    user_id: Optional[str] = Field(None, description="用户ID")
 
 
 @followController.get(
@@ -39,7 +40,7 @@ async def get_stock_list(
         size: int = Query(10, description="每页数量", ge=1, le=100),
         keyword: Optional[str] = Query(None, description="搜索关键词"),
         status: Optional[str] = Query(None, description="股票状态"),
-        query_db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     获取股票列表，支持分页、搜索和状态筛选
@@ -50,7 +51,7 @@ async def get_stock_list(
         size: 每页数量，默认为10
         keyword: 搜索关键词，可选
         status: 股票状态，可选
-        query_db: 数据库会话
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 股票列表响应
@@ -60,7 +61,7 @@ async def get_stock_list(
         follow_service = StockFollowService()
 
         # 调用服务层方法获取股票列表
-        result = await follow_service.get_stock_list(page, size, keyword, status)
+        result = await follow_service.get_stock_list(db, page, size, keyword, status)
 
         logger.info('获取股票列表成功')
         return ResponseUtil.success(msg='获取股票列表成功', data=result)
@@ -78,7 +79,7 @@ async def get_stock_list(
 async def search_stocks(
         request: Request,
         keyword: str = Query(..., description="搜索关键词"),
-        query_db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     根据关键词搜索股票
@@ -86,7 +87,7 @@ async def search_stocks(
     Args:
         request: 请求对象
         keyword: 搜索关键词
-        query_db: 数据库会话
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 搜索结果响应
@@ -106,46 +107,6 @@ async def search_stocks(
 
 
 @followController.get(
-    '/{code}',
-    response_model=StockDetailResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:detail:query'))]
-)
-@Log(title='获取股票详情', business_type=BusinessType.OTHER)
-async def get_stock_detail(
-        request: Request,
-        code: str = Path(..., description="股票代码"),
-        query_db: AsyncSession = Depends(get_db),
-):
-    """
-    获取指定股票的详细信息
-
-    Args:
-        request: 请求对象
-        code: 股票代码
-        query_db: 数据库会话
-
-    Returns:
-        ResponseUtil: 股票详情响应
-    """
-    try:
-        # 实例化服务
-        follow_service = StockFollowService()
-
-        # 调用服务层方法获取股票详情
-        result = await follow_service.get_stock_detail(code)
-
-        if not result:
-            logger.warning(f'股票不存在，代码: {code}')
-            return ResponseUtil.error(msg='股票不存在')
-
-        logger.info(f'获取股票详情成功，代码: {code}')
-        return ResponseUtil.success(msg='获取股票详情成功', data=result)
-    except Exception as e:
-        logger.error(f'获取股票详情异常，股票代码: {code}, 错误: {str(e)}')
-        return ResponseUtil.error(msg=f'获取股票详情异常: {str(e)}')
-
-
-@followController.get(
     '/watchlist',
     response_model=StockWatchlistResponse,
     dependencies=[Depends(CheckUserInterfaceAuth('stock:watchlist:query'))]
@@ -153,32 +114,28 @@ async def get_stock_detail(
 @Log(title='获取用户关注的股票列表', business_type=BusinessType.OTHER)
 async def get_user_watchlist(
         request: Request,
-        query_db: AsyncSession = Depends(get_db),
+        userId: Optional[str] = Query(None, description="用户ID"),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     获取当前登录用户关注的股票列表
 
     Args:
         request: 请求对象
-        query_db: 数据库会话
+        userId: 查询参数中的用户ID
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 用户关注的股票列表响应
     """
     try:
-        # 获取当前用户ID
-        user_id = request.state.user_info.get('userId', '')
-        if not user_id:
-            logger.warning('未获取到有效的用户ID')
-            return ResponseUtil.error(msg='未获取到有效的用户ID')
-
         # 实例化服务
         follow_service = StockFollowService()
 
         # 调用服务层方法获取用户关注列表
-        result = await follow_service.get_user_watchlist(user_id)
+        result = await follow_service.get_user_watchlist(db, userId)
 
-        logger.info(f'获取用户关注列表成功，用户ID: {user_id}')
+        logger.info(f'获取用户关注列表成功，用户ID: {userId}')
         return ResponseUtil.success(msg='获取用户关注列表成功', data=result)
     except Exception as e:
         logger.error(f'获取用户关注列表异常，错误: {str(e)}')
@@ -194,7 +151,7 @@ async def get_user_watchlist(
 async def add_to_watchlist(
         request: Request,
         stock_request: StockAddToWatchlistRequest,
-        query_db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     将股票添加到用户关注列表
@@ -202,30 +159,30 @@ async def add_to_watchlist(
     Args:
         request: 请求对象
         stock_request: 添加股票请求
-        query_db: 数据库会话
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 添加结果响应
     """
     try:
-        # 获取当前用户ID
-        user_id = request.state.user_info.get('userId', '')
-        if not user_id:
-            logger.warning('未获取到有效的用户ID')
-            return ResponseUtil.error(msg='未获取到有效的用户ID')
+        logger.info("stock_request", stock_request)
+        logger.info("stock_request.user_id", stock_request.user_id)
+        logger.info("stock_request.stock_code", stock_request.stock_code)
+        # 优先从请求体获取用户ID，如果没有则尝试从请求状态获取
+        user_id = stock_request.user_id
 
         # 实例化服务
         follow_service = StockFollowService()
 
         # 调用服务层方法添加股票到关注列表
-        result = await follow_service.add_to_watchlist(user_id, stock_request.stockCode)
+        result = await follow_service.add_to_watchlist(db, user_id, stock_request.stock_code)
 
         if result["success"]:
-            logger.info(f'添加股票到关注列表成功，用户ID: {user_id}, 股票代码: {stock_request.stockCode}')
+            logger.info(f'添加股票到关注列表成功，用户ID: {user_id}, 股票代码: {stock_request.stock_code}')
             return ResponseUtil.success(msg=result["message"])
         else:
             logger.warning(
-                f'添加股票到关注列表失败，用户ID: {user_id}, 股票代码: {stock_request.stockCode}, 原因: {result["message"]}')
+                f'添加股票到关注列表失败，用户ID: {user_id}, 股票代码: {stock_request.stock_code}, 原因: {result["message"]}')
             return ResponseUtil.error(msg=result["message"])
     except Exception as e:
         logger.error(f'添加股票到关注列表异常，错误: {str(e)}')
@@ -241,7 +198,8 @@ async def add_to_watchlist(
 async def remove_from_watchlist(
         request: Request,
         stock_code: str = Path(..., description="股票代码"),
-        query_db: AsyncSession = Depends(get_db),
+        userId: Optional[str] = Query(None, description="用户ID"),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     从用户关注列表中移除股票
@@ -249,14 +207,16 @@ async def remove_from_watchlist(
     Args:
         request: 请求对象
         stock_code: 股票代码（路径参数）
-        query_db: 数据库会话
+        user_id: 查询参数中的用户ID
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 移除结果响应
     """
     try:
-        # 获取当前用户ID
-        user_id = request.state.user_info.get('userId', '')
+        # 优先从查询参数获取用户ID，如果没有则尝试从请求状态获取
+        user_id = userId
+
         if not user_id:
             logger.warning('未获取到有效的用户ID')
             return ResponseUtil.error(msg='未获取到有效的用户ID')
@@ -265,7 +225,7 @@ async def remove_from_watchlist(
         follow_service = StockFollowService()
 
         # 调用服务层方法从关注列表移除股票
-        result = await follow_service.remove_from_watchlist(user_id, stock_code)
+        result = await follow_service.remove_from_watchlist(db, user_id, stock_code)
 
         if result["success"]:
             logger.info(f'从关注列表移除股票成功，用户ID: {user_id}, 股票代码: {stock_code}')
@@ -287,21 +247,24 @@ async def remove_from_watchlist(
 @Log(title='清空关注列表', business_type=BusinessType.CLEAN)
 async def clear_watchlist(
         request: Request,
-        query_db: AsyncSession = Depends(get_db),
+        user_id: Optional[str] = Query(None, description="用户ID"),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     清空用户关注列表
 
     Args:
         request: 请求对象
-        query_db: 数据库会话
+        user_id: 查询参数中的用户ID
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 清空结果响应
     """
     try:
-        # 获取当前用户ID
-        user_id = request.state.user_info.get('userId', '')
+        # 优先从查询参数获取用户ID，如果没有则尝试从请求状态获取
+        user_id = user_id or request.state.user_info.get('userId', '') if hasattr(request.state, 'user_info') else ''
+
         if not user_id:
             logger.warning('未获取到有效的用户ID')
             return ResponseUtil.error(msg='未获取到有效的用户ID')
@@ -310,7 +273,7 @@ async def clear_watchlist(
         follow_service = StockFollowService()
 
         # 调用服务层方法清空关注列表
-        result = await follow_service.clear_watchlist(user_id)
+        result = await follow_service.clear_watchlist(db, user_id)
 
         if result["success"]:
             logger.info(f'清空关注列表成功，用户ID: {user_id}')
@@ -331,14 +294,14 @@ async def clear_watchlist(
 @Log(title='获取市场概览', business_type=BusinessType.OTHER)
 async def get_market_overview(
         request: Request,
-        query_db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
 ):
     """
     获取市场概览，包括主要指数信息
 
     Args:
         request: 请求对象
-        query_db: 数据库会话
+        db: 数据库会话
 
     Returns:
         ResponseUtil: 市场概览响应
