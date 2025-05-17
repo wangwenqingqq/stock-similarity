@@ -20,6 +20,11 @@ class StockDetailModel(StockBaseModel):
     volume: int = Field(..., description="成交量")
     update_time: datetime = Field(..., description="更新时间")
 
+class StockAddToWatchlistRequest(BaseModel):
+    """股票添加到关注列表请求模型"""
+    stock_code: str = Field(..., description="股票代码")
+    user_id: str = Field(None, description="用户ID")
+    status: int = Field(..., description="关注状态，1表示已关注，0表示未关注")
 
 class StockHistoryModel(BaseModel):
     """股票历史数据模型"""
