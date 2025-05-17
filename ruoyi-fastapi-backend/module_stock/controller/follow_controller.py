@@ -1,20 +1,14 @@
 from fastapi import APIRouter, Depends, Form, Request, Query, Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
-from pydantic import BaseModel, Field
-
 from config.enums import BusinessType
 from config.get_db import get_db
-from entity.vo.follow_vo import StockWatchlistResponse, StockListResponse, StockSearchResponse, StockDetailResponse, \
-    StockWatchlistAddResponse, StockWatchlistRemoveResponse, StockWatchlistClearResponse, StockMarketOverviewResponse
 from module_admin.annotation.log_annotation import Log
 from module_admin.aspect.interface_auth import CheckUserInterfaceAuth
 from module_admin.service.login_service import LoginService
 from utils.log_util import logger
 from utils.response_util import ResponseUtil
 from module_stock.service.follow_service import StockFollowService
-from module_stock.entity.vo.stock_vo import *
-
+from module_stock.entity.vo.follow_vo import *
 # 创建路由
 followController = APIRouter(
     prefix='/system/show',
@@ -22,10 +16,6 @@ followController = APIRouter(
 )
 
 
-class StockAddToWatchlistRequest(BaseModel):
-    """股票添加到关注列表请求模型"""
-    stock_code: str = Field(..., description="股票代码")
-    user_id: Optional[str] = Field(None, description="用户ID")
 
 
 @followController.get(
@@ -165,9 +155,6 @@ async def add_to_watchlist(
         ResponseUtil: 添加结果响应
     """
     try:
-        logger.info("stock_request", stock_request)
-        logger.info("stock_request.user_id", stock_request.user_id)
-        logger.info("stock_request.stock_code", stock_request.stock_code)
         # 优先从请求体获取用户ID，如果没有则尝试从请求状态获取
         user_id = stock_request.user_id
 
