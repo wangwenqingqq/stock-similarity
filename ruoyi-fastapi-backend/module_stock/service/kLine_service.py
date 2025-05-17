@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 from entity.vo.kLine_vo import StockListResponse, KlineDataResponse, SimilarStockResponse
-from dao.kLine_dao import StockKLineDAO
+from dao.kLine_dao import KLineDAO
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class KLineService:
 
     def __init__(self):
         """初始化服务"""
-        self.kline_dao = StockKLineDAO()
+        self.kline_dao = KLineDAO()
 
 
     async def get_stock_list(self, request: StockListRequest) -> StockListResponse:
@@ -50,7 +50,7 @@ class KLineService:
         """
         try:
             # 调用DAO层获取股票列表
-            result = await StockKLineDAO.fetch_stock_list(
+            result = await KLineDAO.fetch_stock_list(
                 page=request.page,
                 page_size=request.pageSize,
                 sort_by=request.sortBy,
@@ -84,7 +84,7 @@ class KLineService:
         """
         try:
             # 调用DAO层获取K线图数据
-            kline_data = await StockKLineDAO.load_kline_data(
+            kline_data = await KLineDAO.load_kline_data(
                 stock_code=stock_code,
                 time_range=time_range,
                 data_type=data_type
@@ -126,7 +126,7 @@ class KLineService:
         """
         try:
             # 调用DAO层查找相似股票
-            similar_stocks = await StockKLineDAO.find_similar_stocks(stock_code)
+            similar_stocks = await KLineDAO.find_similar_stocks(stock_code)
 
             # 构建响应对象
             response = [
@@ -145,79 +145,6 @@ class KLineService:
             logger.error(f"查找相似股票出错: {e}")
             raise
 
-    # async def compare_stocks_performance(self, base_stock_code: str,
-    #                                      compare_stock_codes: List[str]) -> Dict[str, Any]:
-    #     """
-    #     比较多只股票的性能表现
-    #
-    #     Args:
-    #         base_stock_code: 基准股票代码
-    #         compare_stock_codes: 比较股票代码列表
-    #
-    #     Returns:
-    #         Dict: 性能比较数据
-    #     """
-    #     try:
-    #         # 获取当前日期和一年前日期
-    #         end_date = datetime.now().strftime('%Y-%m-%d')
-    #         start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-    #
-    #         # 获取基准股票数据
-    #         base_stock_data = await self._get_stock_historical_data(base_stock_code, start_date, end_date)
-    #
-    #         # 获取比较股票数据
-    #         comparison_data = {}
-    #         for code in compare_stock_codes:
-    #             stock_data = await self._get_stock_historical_data(code, start_date, end_date)
-    #             stock_info = await self._get_stock_info(code)
-    #             comparison_data[code] = {
-    #                 'name': stock_info.get('name', ''),
-    #                 'data': stock_data
-    #             }
-    #
-    #         # 计算相对收益率
-    #         performance_data = self._calculate_relative_returns(base_stock_data, comparison_data)
-    #
-    #         return performance_data
-    #     except Exception as e:
-    #         logger.error(f"比较股票性能出错: {e}")
-    #         raise
-
-    # async def analyze_technical_indicators(self, stock_code: str,
-    #                                        time_range: str = 'day') -> Dict[str, Any]:
-    #     """
-    #     分析股票技术指标
-    #
-    #     Args:
-    #         stock_code: 股票代码
-    #         time_range: 时间范围，可选 'day', 'week', 'month'
-    #
-    #     Returns:
-    #         Dict: 技术指标分析结果
-    #     """
-    #     try:
-    #         # 获取K线图数据
-    #         kline_data = await StockKLineDAO.load_kline_data(
-    #             stock_code=stock_code,
-    #             time_range=time_range
-    #         )
-    #
-    #         # 转换为DataFrame
-    #         dates = kline_data.get('categories', [])
-    #         close_prices = [v[1] for v in kline_data.get('values', [])]
-    #
-    #         df = pd.DataFrame({
-    #             'date': dates,
-    #             'close': close_prices
-    #         })
-    #
-    #         # 计算技术指标
-    #         technical_indicators = self._calculate_technical_indicators(df)
-    #
-    #         return technical_indicators
-    #     except Exception as e:
-    #         logger.error(f"分析技术指标出错: {e}")
-    #         raise
 
     async def _get_stock_info(self, stock_code: str) -> Dict[str, Any]:
         """
@@ -232,7 +159,7 @@ class KLineService:
         # 此处可扩展为从数据库获取更多股票基本信息
         # 目前简单实现，从股票列表中获取
         try:
-            result = await StockKLineDAO.fetch_stock_list(
+            result = await KLineDAO.fetch_stock_list(
                 page=1,
                 page_size=1,
                 keyword=stock_code
@@ -261,7 +188,7 @@ class KLineService:
             pd.DataFrame: 股票历史数据
         """
         # 这里简化实现，实际应该调用专门的DAO方法
-        kline_data = await StockKLineDAO.load_kline_data(
+        kline_data = await KLineDAO.load_kline_data(
             stock_code=stock_code,
             time_range='month'  # 使用月范围获取足够的历史数据
         )
@@ -365,75 +292,4 @@ class KLineService:
         return {
             'dates': data['date'],
             'returns': data['cumulative_return']
-        }
-
-    def _calculate_technical_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        计算技术指标
-
-        Args:
-            data: 股票数据
-
-        Returns:
-            Dict: 技术指标结果
-        """
-        if data.empty:
-            return {}
-
-        # 计算RSI (相对强弱指标)
-        def calculate_rsi(series, period=14):
-            delta = series.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            return 100 - (100 / (1 + rs))
-
-        # 计算MACD (移动平均收敛散度)
-        def calculate_macd(series, fast=12, slow=26, signal=9):
-            ema_fast = series.ewm(span=fast, adjust=False).mean()
-            ema_slow = series.ewm(span=slow, adjust=False).mean()
-            macd_line = ema_fast - ema_slow
-            signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-            histogram = macd_line - signal_line
-            return {
-                'macd_line': macd_line,
-                'signal_line': signal_line,
-                'histogram': histogram
-            }
-
-        # 计算布林带
-        def calculate_bollinger_bands(series, period=20, std_dev=2):
-            middle_band = series.rolling(window=period).mean()
-            std = series.rolling(window=period).std()
-            upper_band = middle_band + (std * std_dev)
-            lower_band = middle_band - (std * std_dev)
-            return {
-                'upper': upper_band,
-                'middle': middle_band,
-                'lower': lower_band
-            }
-
-        # 确保close列存在
-        if 'close' not in data.columns:
-            return {}
-
-        # 计算各指标
-        rsi = calculate_rsi(data['close'])
-        macd = calculate_macd(data['close'])
-        bollinger = calculate_bollinger_bands(data['close'])
-
-        # 返回结果
-        return {
-            'dates': data['date'].tolist(),
-            'rsi': rsi.dropna().tolist(),
-            'macd': {
-                'macd_line': macd['macd_line'].dropna().tolist(),
-                'signal_line': macd['signal_line'].dropna().tolist(),
-                'histogram': macd['histogram'].dropna().tolist()
-            },
-            'bollinger': {
-                'upper': bollinger['upper'].dropna().tolist(),
-                'middle': bollinger['middle'].dropna().tolist(),
-                'lower': bollinger['lower'].dropna().tolist()
-            }
         }
