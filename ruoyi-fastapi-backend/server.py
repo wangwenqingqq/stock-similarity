@@ -31,6 +31,7 @@ from module_stock.controller.stock_controller import stockController
 from module_stock.controller.similar_controller import similarController
 from module_stock.controller.follow_controller import followController
 from module_stock.controller.kLine_controller import klineController
+from module_stock.controller.history_controller import historyController
 # 生命周期事件
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -85,7 +86,8 @@ controller_list = [
     {'router': stockController, 'tags': ['计算管理-股票信息']},
     {'router': similarController, 'tags': ['计算管理-股票相似度计算']},
     {'router': followController, 'tags': ['计算管理-关注股票列表']},
-    {'router': klineController, 'tags': ['计算管理-股票K线展示'],}
+    {'router': klineController, 'tags': ['计算管理-股票K线展示'],},
+    {'router': historyController, 'tags': ['计算管理-相似计算历史'],}
 ]
 
 for controller in controller_list:
