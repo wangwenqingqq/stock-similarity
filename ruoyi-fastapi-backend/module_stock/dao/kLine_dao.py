@@ -13,7 +13,7 @@ from utils.data_util import convert_result_to_dataframe
 logger = logging.getLogger(__name__)
 
 
-class StockKLineDAO:
+class KLineDAO:
     """
     股票K线数据访问对象
     处理股票K线图数据的查询和相关计算
