@@ -1,5 +1,6 @@
 # dao/follow_dao.py
 import asyncio
+from datetime import datetime
 
 import clickhouse_connect
 from sqlalchemy import select, and_, delete, func, distinct
@@ -155,25 +156,34 @@ class FollowDAO:
         try:
             # 先从MySQL获取用户关注的股票代码
             result = await db.execute(
-                select(StockWatchlist.stock_code)
+                select(StockWatchlist.stock_code, StockWatchlist.add_time)
                 .where(StockWatchlist.user_id == user_id)
                 .order_by(StockWatchlist.add_time.desc())
             )
-            stock_codes = [row[0] for row in result.all()]
+            records = result.all()
+
+            # 创建股票代码到添加时间的映射字典
+            stock_code_to_add_time = {row[0]: row[1] for row in records}
+            stock_codes = list(stock_code_to_add_time.keys())
 
             if not stock_codes:
                 return []
 
-            # 然后从ClickHouse获取这些股票的详细数据
-            return await cls._get_stocks_detail_from_clickhouse(stock_codes)
+            # 然后从ClickHouse获取这些股票的详细数据，传递映射字典
+            return await cls._get_stocks_detail_from_clickhouse(stock_codes, stock_code_to_add_time)
         except Exception as e:
             logger.error(f"获取用户关注列表失败，用户ID: {user_id}, 错误: {e}")
             raise
 
     @classmethod
-    async def _get_stocks_detail_from_clickhouse(cls, stock_codes: List[str]) -> List[Dict[str, Any]]:
+    async def _get_stocks_detail_from_clickhouse(cls, stock_codes: List[str],
+                                                 stock_code_to_add_time: Dict[str, datetime]) -> List[Dict[str, Any]]:
         """
         从ClickHouse获取多个股票的详细信息
+
+        Args:
+            stock_codes: 股票代码列表
+            stock_code_to_add_time: 股票代码到添加时间的映射
         """
         try:
             if not stock_codes:
@@ -217,16 +227,20 @@ class FollowDAO:
 
             stocks = []
             for row in result.result_rows:
+                stock_code = row[0]
+                # 从映射中获取对应的添加时间
+                add_time = stock_code_to_add_time.get(stock_code)
+
                 stocks.append({
-                    "code": row[0],
+                    "code": stock_code,
                     "name": row[1],
                     "price": row[2],
-                    "change": row[3],
+                    "change_rate": row[3],
                     "open": row[4],
                     "high": row[5],
                     "low": row[6],
                     "volume": row[7],
-                    "update_time": row[8]
+                    "add_time": add_time,  # 使用对应的单个时间值
                 })
 
             return stocks
