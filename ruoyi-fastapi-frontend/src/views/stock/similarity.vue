@@ -8,6 +8,12 @@
         </template>
   
         <!-- 查询区域 -->
+      <el-card class="box-card mb-4">
+        <template #header>
+            <div class="card-header">
+              <span>股票信息</span>
+            </div>
+          </template>
         <el-form :model="queryParams" ref="queryRef" :inline="true">
           <el-form-item label="股票代码" prop="stockCode">
             <el-input
@@ -15,10 +21,15 @@
               placeholder="请输入股票代码（如: 600000）"
               clearable
               style="width: 200px"
-              @keyup.enter="calculateSimilarity"
-              @input="validateStockCode"
-              :class="{'is-error': stockCodeError}"
-            />
+            />  
+          </el-form-item>
+          <el-form-item label="股票名称" prop="stockName">
+            <el-input
+              v-model="queryParams.stockName"
+              placeholder="可输入股票名称（如: 浦发银行）"
+              clearable
+              style="width: 200px"
+            />  
           </el-form-item>
           <el-form-item label="开始日期" prop="startDate">
             <el-date-picker
@@ -38,33 +49,14 @@
               :disabled-date="disabledEndDate"
             />
           </el-form-item>
-          <el-form-item label="相似性对比范围" prop="sectionLevel">
-              <el-select v-model="queryParams.sectionLevel" placeholder="相似性对比范围" style="width: 200px">
-                <el-option label="中证三级行业" :value=1 />
-                <el-option label="证监会一级行业" :value=0 />
-              </el-select>
-            </el-form-item>
-          <el-form-item label="相似股票数量" prop="similarCount">
-            <el-input-number
-              v-model="queryParams.similarCount"
-              :min="1"
-              :max="10"
-              style="width: 200px"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" icon="Search" @click="calculateSimilarity" :loading="loading">
-              {{ loading ? '计算中...' : '计算相似性' }}
-            </el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
-          </el-form-item>
+          <el-button icon="Refresh" @click="resetQueryStock">重置</el-button>
         </el-form>
-  
+      </el-card>
         <!-- 分析参数配置 -->
         <el-card class="box-card mb-4">
           <template #header>
             <div class="card-header">
-              <span>分析参数</span>
+              <span>调整参数</span>
             </div>
           </template>
           
@@ -89,13 +81,26 @@
                 <el-checkbox label="close">收盘价涨幅</el-checkbox>
               </el-checkbox-group>
             </el-form-item>
-            
-            <el-form-item label="是否集成语言模型" prop="useLLM">
-              <el-radio-group v-model="queryParams.useLLM">
-                <el-radio :label="true">是</el-radio>
-                <el-radio :label="false">否</el-radio>
-              </el-radio-group>
-            </el-form-item>
+            <el-form-item label="相似性对比范围" prop="sectionLevel">
+              <el-select v-model="queryParams.sectionLevel" placeholder="相似性对比范围" style="width: 200px">
+                <el-option label="中证三级行业" :value=1 />
+                <el-option label="证监会一级行业" :value=0 />
+              </el-select>
+          </el-form-item>
+          <el-form-item label="相似股票数量" prop="similarCount">
+            <el-input-number
+              v-model="queryParams.similarCount"
+              :min="1"
+              :max="10"
+              style="width: 200px"
+            />
+          </el-form-item>
+            <el-form-item>
+                <el-button type="primary" icon="Search" @click="calculateSimilarity" :loading="loading">
+                  {{ loading ? '计算中...' : '计算相似性' }}
+                </el-button>
+                <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+          </el-form-item>
           </el-form>
         </el-card>
         <!-- 结果展示区域 -->
@@ -129,13 +134,6 @@
   
               <el-divider content-position="left">收益率对比</el-divider>
               <div ref="chartRef" style="width: 100%; height: 400px;"></div>
-  
-              <div v-if="queryParams.useLLM">
-                <el-divider content-position="left">语言模型分析</el-divider>
-                <el-card shadow="hover" class="mb-4 bg-gray">
-                  <span>{{ llmAnalysis }}</span>
-                </el-card>
-              </div>
             </div>
           </el-card>
         </div>
@@ -145,6 +143,7 @@
   
   <script setup name="StockSimilarity">
   import { ref, reactive, watch,onMounted, onUnmounted, nextTick, toRefs } from 'vue';
+  import { useRoute } from 'vue-router';
   import * as echarts from 'echarts/core';
   import { LineChart } from 'echarts/charts';
   import {
@@ -156,9 +155,10 @@
     DataZoomComponent
   } from 'echarts/components';
   import { CanvasRenderer } from 'echarts/renderers';
-  import { calculateStockSimilarity } from '@/api/system/stockSimilar.js';
+  import { calculateStockSimilarity } from '@/api/stock/stockSimilar.js';
   import { ElMessage } from 'element-plus';
-  
+  import useUserStore from '@/store/modules/user';
+  import { addQueryHistoryList } from '../../api/stock/stockHistory';
   const { proxy } = getCurrentInstance();
   
   // 注册 ECharts 组件
@@ -172,27 +172,30 @@
     LineChart,
     CanvasRenderer
   ]);
-  
+  // 获取当前路由对象
+  const route = useRoute();
   // 响应式状态
   const loading = ref(false);
   const showResults = ref(false);
   const similarStocks = ref([]);
-  const llmAnalysis = ref('');
   const chartRef = ref(null);
   // 查询参数和表单
   const data = reactive({
     queryParams: {
       stockCode: '',
+      stockName: '',
       startDate: getDefaultStartDate(),
       endDate: getDefaultEndDate(),
       sectionLevel: 1,
       indicators: ['close'],
       similarityMethod: 'pearson',
-      useLLM: false,
       similarCount: 3
     }
   });
-  
+  // 用户store
+  const userStore = useUserStore();
+  // 获取用户ID
+  const currentUserId = computed(() => userStore.id);
   const { queryParams } = toRefs(data);
   
   // 图表实例
@@ -217,6 +220,37 @@
   onMounted(() => {
     window.addEventListener('resize', handleResize);
     console.log('组件已挂载');
+    console.log('showResults:', showResults.value);
+    console.log('similarStocks:', similarStocks.value);
+    console.log('chartRef:', chartRef.value);
+    window.addEventListener('resize', handleResize);
+    
+    // 新增：检查URL参数并填充表单
+    if (route.query.stockCode) {
+      console.log('检测到路由参数:', route.query);
+      
+      // 填充股票代码
+      queryParams.value.stockCode = route.query.stockCode;
+      
+      // 填充开始日期和结束日期（如果存在）
+      if (route.query.startTime) {
+        // 确保日期格式正确
+        queryParams.value.startDate = new Date(route.query.startTime);
+      }
+      
+      if (route.query.endTime) {
+        // 确保日期格式正确
+        queryParams.value.endDate = new Date(route.query.endTime);
+      }
+      if(route.query.stockName) {
+        queryParams.value.stockName = route.query.stockName;
+      }
+      
+      // 可选：自动触发查询
+      // 如果希望页面加载后自动执行查询，可以取消下面这行的注释
+      // nextTick(() => calculateSimilarity());
+    }
+    
     console.log('showResults:', showResults.value);
     console.log('similarStocks:', similarStocks.value);
     console.log('chartRef:', chartRef.value);
@@ -261,24 +295,33 @@ function getDefaultEndDate() {
     return 'text-danger';
   }
   
-  function resetQuery() {
+  function resetQueryStock() {
   // 修改这里，确保表单引用存在
   if (proxy.$refs["queryRef"]) {
     proxy.$refs["queryRef"].resetFields();
   } else {
     // 如果引用不存在，则手动重置
     queryParams.value.stockCode = '';
+    queryParams.value.stockName = '';
     queryParams.value.startDate = getDefaultStartDate();
     queryParams.value.endDate = getDefaultEndDate();
-    queryParams.value.sectionLevel = 1;
-    queryParams.value.indicators = ['close'];
-    queryParams.value.similarityMethod = 'pearson';
-    queryParams.value.useLLM = false;
-    queryParams.value.similarCount = 3;
   }
   showResults.value = false;
 }
   
+function resetQuery() {
+  // 修改这里，确保表单引用存在
+  if (proxy.$refs["queryRef"]) {
+    proxy.$refs["queryRef"].resetFields();
+  } else {
+    // 如果引用不存在，则手动重置
+    queryParams.value.sectionLevel = 1;
+    queryParams.value.indicators = ['close'];
+    queryParams.value.similarityMethod = 'pearson';
+    queryParams.value.similarCount = 3;
+  }
+  showResults.value = false;
+}
   async function calculateSimilarity() {
     if (!queryParams.value.stockCode) {
       ElMessage.warning('请输入股票代码');
@@ -303,12 +346,10 @@ function getDefaultEndDate() {
         sectionLevel: queryParams.value.sectionLevel,
         indicators: queryParams.value.indicators,
         similarityMethod: queryParams.value.similarityMethod,
-        useLLM: queryParams.value.useLLM,
         similarCount: queryParams.value.similarCount
       });
       console.log('后端返回数据:', result);
       similarStocks.value = result.data.similarStocks;
-      llmAnalysis.value = result.data.llmAnalysis || '';
       
        // 再次等待DOM更新，确保结果区域已渲染
       await nextTick();
@@ -317,6 +358,51 @@ function getDefaultEndDate() {
         drawChart(result.data.performanceData);
       }, 100);
       ElMessage.success('分析完成');
+      const historyData = {
+        stockCode: queryParams.value.stockCode,
+        stockName: queryParams.value.stockName,
+        startDate: formatDate(queryParams.value.startDate),
+        endDate: formatDate(queryParams.value.endDate),
+        indicators: queryParams.value.indicators,
+        method: queryParams.value.similarityMethod,
+        compareScope: String(queryParams.value.sectionLevel), // 修改字段名并确保是字符串
+        similarCount: parseInt(queryParams.value.similarCount, 10), 
+        userId: String(currentUserId.value), // 确保是字符串类型
+        status: 1
+      }
+        try {
+          const response = await addQueryHistoryList(historyData);
+          console.log('提交成功:', response);
+          ElMessage.success('查询历史记录保存成功');
+        } catch (error) {
+          console.error('提交失败:', error);
+          
+          // 打印详细的错误信息
+          if (error.response && error.response.data) {
+            console.error('错误响应数据:', JSON.stringify(error.response.data, null, 2));
+            
+            if (error.response.data.detail) {
+              // 完整打印详情数组
+              console.error('验证错误详情:', JSON.stringify(error.response.data.detail, null, 2));
+              
+              let errorMsg = '';
+              if (Array.isArray(error.response.data.detail)) {
+                errorMsg = error.response.data.detail.map(item => {
+                  // 提取字段位置和错误消息
+                  const loc = item.loc ? item.loc.slice(1).join('.') : '';
+                  return `${loc ? loc + ': ' : ''}${item.msg}`;
+                }).join('; ');
+              } else {
+                errorMsg = JSON.stringify(error.response.data.detail);
+              }
+              ElMessage.error(`保存失败: ${errorMsg}`);
+            } else {
+              ElMessage.error('保存失败: ' + (error.response.data.message || '未知错误'));
+            }
+          } else {
+            ElMessage.error('系统异常，请稍后再试');
+          }
+        }
     } catch (error) {
       console.error('计算相似性出错:', error);
       ElMessage.error('计算过程中出现错误，请检查输入并重试');
@@ -340,7 +426,7 @@ function drawChart(data) {
   }
   
   // 打印数据结构以便调试
-  console.log('数据类型:', typeof data);
+  // console.log('数据类型:', typeof data);
   if (typeof data === 'object') {
     console.log('数据属性:', Object.keys(data));
   console.log('图表引用状态:', chartRef.value);
@@ -525,4 +611,97 @@ function drawChartImplementation(data) {
   .bg-gray {
     background-color: #f5f7fa;
   }
+  /* 删除按钮样式 */
+.delete-button {
+  margin-left: 10px;
+  padding: 8px;
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.3s;
+}
+
+.delete-button:hover {
+  background: #f0f0f0;
+}
+
+.delete-button.active {
+  background: #f5222d;
+  color: white;
+  border-color: #f5222d;
+}
+
+/* 选择模式栏 */
+.select-mode-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f5f5f5;
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  border-radius: 4px;
+}
+
+.select-mode-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.select-all-button,
+.cancel-button,
+.confirm-delete-button {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+.select-all-button {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.cancel-button {
+  background: #d9d9d9;
+  color: #333;
+}
+
+.confirm-delete-button {
+  background: #f5222d;
+  color: white;
+}
+
+.confirm-delete-button:disabled {
+  background: #ffb8b8;
+  cursor: not-allowed;
+}
+
+/* 查询项选择框 */
+.query-item {
+  display: flex;
+  position: relative;
+}
+
+.select-checkbox {
+  position: absolute;
+  left: 15px;
+  top: 20px;
+  z-index: 5;
+  font-size: 20px;
+  color: #d9d9d9;
+}
+
+.query-item.selected .select-checkbox {
+  color: #1890ff;
+}
+
+/* 选择模式下的查询项调整 */
+.query-item.selected {
+  border-color: #1890ff;
+  background: rgba(24, 144, 255, 0.05);
+}
   </style>

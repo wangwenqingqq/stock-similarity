@@ -145,7 +145,7 @@
 </template>
 
 <script setup name="StockInfo">
-import { listStockInfo, addStockInfo, delStockInfo, getStockInfo, updateStockInfo } from "@/api/system/stockInfo";
+import { listStockInfo, addStockInfo, delStockInfo, getStockInfo, updateStockInfo } from "@/api/stock/stockInfo";
 
 const { proxy } = getCurrentInstance();
 const { sys_stock_status } = proxy.useDict("sys_stock_status");
