@@ -16,14 +16,14 @@ class StockSimilarityRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "stockCode": "000001",
-                "startDate": "2023-01-01",
-                "endDate": "2023-06-30",
+                "stock_code": "000001",
+                "start_date": "2023-01-01",
+                "end_date": "2023-06-30",
                 "sectionLevel": 1,
                 "indicators": ["close", "high", "low", "turnover"],
                 "similarityMethod": "dtw",
                 "useLLM": True,
-                "similarCount": 5
+                "similar_count": 5
             }
         }
 

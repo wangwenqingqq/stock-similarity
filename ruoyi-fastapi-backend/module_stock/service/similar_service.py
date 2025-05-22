@@ -4,6 +4,8 @@ import networkx as nx
 import pandas as pd
 import numpy as np
 from fastdtw import fastdtw
+
+from entity.vo.kLine_vo import StockBase
 from module_stock.dao.similar_dao import SimilarDao
 from module_stock.entity.vo.similar_vo import *
 import logging
@@ -198,6 +200,10 @@ class StockSimilarityService:
             return self._calculate_euclidean_similarity(stock1_aligned, stock2_aligned, indicators)
         elif method == "coIntegration":
             return self._calculate_cointegration_similarity(stock1_aligned, stock2_aligned, indicators)
+        elif method == "shape":
+            return self._calculate_shape_similarity(stock1_aligned, stock2_aligned, indicators)
+        elif method == "position":
+            return self._calculate_position_similarity(stock1_aligned, stock2_aligned, indicators)
         else:
             logger.warning(f"不支持的相似性计算方法: {method}，使用dtw代替")
             return self._calculate_dtw_similarity(stock1_aligned, stock2_aligned, indicators)
@@ -870,3 +876,171 @@ class StockSimilarityService:
             stocks=stocks_data
         )
 
+    def _calculate_shape_similarity(
+            self,
+            stock1: pd.DataFrame,
+            stock2: pd.DataFrame,
+            indicators: List[str]
+    ) -> float:
+        """使用K线形状（上影线、实体、下影线）计算两只股票的相似度
+
+        Args:
+            stock1: 第一只股票数据
+            stock2: 第二只股票数据
+            indicators: 用于计算的指标列表（未用到，可保留）
+
+        Returns:
+            float: 相似度得分
+        """
+        # 权重设置
+        upper_weight = 0.33
+        body_weight = 0.34
+        lower_weight = 0.33
+        # 首先确保所有数值列都是float类型
+        numeric_cols = ['close', 'high', 'low', 'ycp','open']
+        for col in numeric_cols:
+            if col in stock1.columns:
+                stock1[col] = stock1[col].astype(float)
+            if col in stock2.columns:
+                stock2[col] = stock2[col].astype(float)
+        # 对齐日期
+        common_dates = stock1.index.intersection(stock2.index)
+        if len(common_dates) < 2:
+            logger.warning("股票对的共同交易日少于2天，无法计算形状相似度")
+            return 0.0
+
+        stock1_aligned = stock1.loc[common_dates]
+        stock2_aligned = stock2.loc[common_dates]
+
+        # 计算上影线、实体、下影线长度序列
+        def calc_shape_parts(df):
+            # 上影线
+            upper = np.where(
+                df['open'] > df['close'],
+                (df['high'] - df['open']) / (df['ycp'] * 0.1),
+                (df['high'] - df['close']) / (df['ycp'] * 0.1)
+            )
+            # 下影线
+            lower = np.where(
+                df['open'] > df['close'],
+                (df['close'] - df['low']) / (df['ycp'] * 0.1),
+                (df['open'] - df['low']) / (df['ycp'] * 0.1)
+            )
+            # 实体
+            body = np.abs(df['open'] - df['close']) / (df['ycp'] * 0.1)
+            return upper, body, lower
+
+        upper1, body1, lower1 = calc_shape_parts(stock1_aligned)
+        upper2, body2, lower2 = calc_shape_parts(stock2_aligned)
+
+        # 计算各部分的总和
+        sum_upper1, sum_upper2 = np.sum(upper1), np.sum(upper2)
+        sum_body1, sum_body2 = np.sum(body1), np.sum(body2)
+        sum_lower1, sum_lower2 = np.sum(lower1), np.sum(lower2)
+
+        # 相似度计算函数
+        def part_similarity(sum1, sum2):
+            if sum1 == 0 and sum2 == 0:
+                return 1.0
+            if (sum1 == 0 and sum2 != 0) or (sum1 != 0 and sum2 == 0):
+                return 0.0
+            return min(sum1, sum2) / max(sum1, sum2)
+
+        upper_sim = part_similarity(sum_upper1, sum_upper2)
+        body_sim = part_similarity(sum_body1, sum_body2)
+        lower_sim = part_similarity(sum_lower1, sum_lower2)
+
+        # 加权总相似度
+        similarity = upper_weight * upper_sim + body_weight * body_sim + lower_weight * lower_sim
+        return float(similarity)
+
+    def _calculate_position_similarity(
+            self,
+            stock1: pd.DataFrame,
+            stock2: pd.DataFrame,
+            indicators: List[str]
+    ) -> float:
+        """
+        使用位置序列计算两只股票的相似度
+
+        位置定义：
+        - 第一天位置为1
+        - 之后的位置为 (收盘价-作收价)/(作收价*0.1)
+
+        两个序列的位置相似性 = 较小的所有天数的位置和 / 较大的所有天数位置和
+        如果有且只有一个位置和为0，则相似度为0；如果两个都是0，则相似度为1。
+
+        Args:
+            stock1: 第一只股票数据
+            stock2: 第二只股票数据
+            indicators: 用于计算的指标列表（未用到，可保留）
+
+        Returns:
+            float: 相似度得分
+        """
+        numeric_cols = ['close','ycp']
+        for col in numeric_cols:
+            if col in stock1.columns:
+                stock1[col] = stock1[col].astype(float)
+            if col in stock2.columns:
+                stock2[col] = stock2[col].astype(float)
+        # 对齐日期
+        common_dates = stock1.index.intersection(stock2.index)
+        if len(common_dates) < 2:
+            logger.warning("股票对的共同交易日少于2天，无法计算位置相似度")
+            return 0.0
+
+        stock1_aligned = stock1.loc[common_dates]
+        stock2_aligned = stock2.loc[common_dates]
+
+        # 计算位置序列
+        def calc_position(df):
+            pos = np.zeros(len(df))
+            pos[0] = 1  # 第一天为1
+            if len(df) > 1:
+                # 从第二天开始
+                pos[1:] = (df['close'].values[1:] - df['ycp'].values[1:]) / (df['ycp'].values[1:] * 0.1)
+            return pos
+
+        pos1 = calc_position(stock1_aligned)
+        pos2 = calc_position(stock2_aligned)
+
+        sum_pos1 = np.sum(pos1)
+        sum_pos2 = np.sum(pos2)
+
+        # 相似度计算
+        if sum_pos1 == 0 and sum_pos2 == 0:
+            return 1.0
+        if (sum_pos1 == 0 and sum_pos2 != 0) or (sum_pos1 != 0 and sum_pos2 == 0):
+            return 0.0
+        similarity = min(sum_pos1, sum_pos2) / max(sum_pos1, sum_pos2)
+        return float(similarity)
+
+    async def search_history(self, keyword: str) -> List[StockBase]:
+        """
+        搜索查询历史（支持模糊搜索）
+
+        Args:
+            keyword: 搜索关键词
+
+        Returns:
+            List[StockBase]: 搜索结果响应
+        """
+        try:
+            # 调用DAO层搜索历史
+            results = await SimilarDao.search_history(keyword)
+
+            # 构建响应对象列表
+            response = []
+            for row in results:
+                # 假设 row 是 dict 或有 code/name 属性
+                stock = StockBase(
+                    code=row.get("code", "") if isinstance(row, dict) else getattr(row, "code", ""),
+                    name=row.get("name", "") if isinstance(row, dict) else getattr(row, "name", "")
+                )
+                response.append(stock)
+
+            return response
+        except Exception as e:
+            logger.error(f"搜索查询历史出错: {e}")
+            raise

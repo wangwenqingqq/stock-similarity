@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional
 import pandas as pd
+
+from entity.vo.kLine_vo import StockBase
 from module_stock.entity.vo.similar_vo import *
 import logging
 import asyncio
@@ -511,3 +513,31 @@ class SimilarDao:
         ]
         logger.info(f"返回 {len(indicators)} 个支持的指标")
         return indicators
+
+    @classmethod
+    async def search_history(cls, keyword: str) -> List[StockBase]:
+        """
+        搜索历史记录，并附带每条历史的结果
+        """
+        try:
+            query = f"""
+            SELECT SecuCode, SecuName
+            FROM events_temp.lc_csiinduspe
+            WHERE SecuCode LIKE '%{keyword}%' OR SecuName LIKE '%{keyword}%'
+            LIMIT 20
+            """
+            logger.info(f"执行历史模糊查询: {query}")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, ck_util.query, query)
+
+            stock_list = []
+            for row in result.result_rows:
+                stock = StockBase(
+                    code=row[0] if row[0] else "",
+                    name=row[1] if row[1] else ""
+                )
+                stock_list.append(stock)
+            return stock_list
+        except Exception as e:
+            logger.error(f"搜索历史记录失败，关键词: {keyword}, 错误: {e}")
+            raise
