@@ -2,38 +2,29 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-
-class QueryHistoryVO(BaseModel):
-    """查询历史视图对象"""
-    stock_code: str = Field(..., alias="stockCode")
-    stock_name: str = Field(..., alias="stockName")
-    start_date: str = Field(..., alias="startDate")
-    end_date: str = Field(..., alias="endDate")
-    indicators: List[str]
-    method: str
-    compare_scope: str = Field(..., alias="compareScope")
-    similar_count: int = Field(..., alias="similarCount")
-    user_id: Optional[str] = Field(None, alias="userId")
-    remark: Optional[str] = None
-    status: int = 1
-
-
 class SimilarStockResultVO(BaseModel):
     """相似股票结果视图对象"""
     stock_code: str
     stock_name: str
     similarity: float
-    return_rate: float = 0.0
-    volatility: float = 0.0
-    sharpe_ratio: float = 0.0
-    max_drawdown: float = 0.0
-    correlation: float = 0.0
-    beta: float = 0.0
-    alpha: float = 0.0
 
     class Config:
         orm_mode = True
-
+class QueryHistoryVO(BaseModel):
+    """查询历史视图对象"""
+    stock_code: str = Field(..., alias="stock_code")
+    stock_name: str = Field(..., alias="stock_name")
+    start_date: str = Field(..., alias="start_date")
+    end_date: str = Field(..., alias="end_date")
+    indicators: List[str]
+    method: str
+    compare_scope: str = Field(..., alias="compare_scope")
+    similar_count: int = Field(..., alias="similar_count")
+    user_id: int = Field(None, alias="user_id")
+    remark: Optional[str] = None
+    query_time: str = Field(..., alias="query_time")
+    status: int = 1,
+    similar_results : List[SimilarStockResultVO] = Field(..., alias="similar_results")
 
 class QueryHistoryDetailVO(BaseModel):
     """查询历史详情视图对象"""
@@ -48,7 +39,7 @@ class QueryHistoryDetailVO(BaseModel):
     compare_scope: str
     similar_count: int
     results: List[SimilarStockResultVO]
-    user_id: Optional[str] = None
+    user_id: int
     remark: Optional[str] = None
     status: int = 1
 
@@ -70,15 +61,15 @@ class QueryHistoryListResponse(BaseModel):
 class QueryHistoryDetailResponse(BaseModel):
     """查询历史详情响应"""
     id: int
-    stockCode: str
-    stockName: str
-    queryTime: datetime
-    startDate: str
-    endDate: str
+    stock_code: str
+    stock_name: str
+    query_time: datetime
+    start_date: str
+    end_date: str
     indicators: List[str]
     method: str
-    compareScope: str
-    similarCount: int
+    compare_scope: str
+    similar_count: int
     results: List[SimilarStockResultVO]
 
     class Config:
@@ -97,8 +88,8 @@ class QueryHistorySearchResponse(BaseModel):
 class SimilarStocksDetailResponse(BaseModel):
     """相似股票详情响应"""
     historyId: int
-    stockCode: str
-    stockName: str
+    stock_code: str
+    stock_name: str
     queryTime: datetime
     results: List[SimilarStockResultVO]
 

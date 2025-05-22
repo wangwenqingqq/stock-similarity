@@ -1,9 +1,8 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 from typing import Dict, Any
 
-Base = declarative_base()
+from config.database import Base
 
 
 class StockHistory(Base):
@@ -29,7 +28,7 @@ class StockHistory(Base):
 
     # 查询元数据
     query_time = Column(DateTime, default=datetime.now, nullable=False, index=True, comment='查询时间')
-    user_id = Column(String(50), nullable=False, index=True, comment='用户ID')
+    user_id = Column(Integer, nullable=False, index=True, comment='用户ID')
 
     # 其他信息
     remark = Column(Text, comment='备注')

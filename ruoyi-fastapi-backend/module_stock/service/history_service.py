@@ -17,12 +17,9 @@ logger = logging.getLogger(__name__)
 
 class QueryHistoryListRequest(BaseModel):
     """查询历史列表请求"""
+    user_id: int = Field(None, alias="userId")
     page: int = 1
     pageSize: int = 10
-    stockCode: Optional[str] = None
-    stockName: Optional[str] = None
-    startDate: Optional[str] = None
-    endDate: Optional[str] = None
     sortBy: str = 'query_time'
     sortOrder: str = 'desc'
 
@@ -70,6 +67,7 @@ class HistoryService:
             # 调用DAO层创建历史记录
             history_id = await HistoryDAO.create_history(
                 db,
+                user_id=request.user_id,
                 stock_code=request.stock_code,  # 改为 stock_code
                 stock_name=request.stock_name,  # 改为 stock_name
                 start_date=request.start_date,  # 改为 start_date
@@ -80,6 +78,7 @@ class HistoryService:
                 similar_count=int(request.similar_count),  # 改为 similar_count
                 remark=request.remark,
                 status=int(request.status),
+                similar_results = request.similar_results
             )
 
             # 获取创建的历史记录详情
@@ -87,21 +86,26 @@ class HistoryService:
 
             return {
                 'id': history_id,
-                'stockCode': history['stock_code'],
-                'stockName': history['stock_name'],
-                'queryTime': history['query_time']
+                'stock_code': history['stock_code'],
+                'stock_name': history['stock_name'],
+                'query_time': history['query_time']
             }
         except Exception as e:
             logger.error(f"创建查询历史记录出错: {e}")
             raise
 
-    async def get_history_list(self, db: AsyncSession, request: QueryHistoryListRequest) -> QueryHistoryListResponse:
+    async def get_history_list(self, db: AsyncSession, user_id, page,page_size,sort_by,sort_order) -> QueryHistoryListResponse:
         """
         获取查询历史列表
 
         Args:
             db: 数据库会话
-            request: 查询历史列表请求参数
+            user_id: 用户id
+            page: 页码
+            page_size: 页数
+            sort_by: 排列规则
+            sort_order:查询参数
+            db: 数据库会话
 
         Returns:
             QueryHistoryListResponse: 查询历史列表响应
@@ -110,22 +114,19 @@ class HistoryService:
             # 调用DAO层获取历史列表
             result = await HistoryDAO.fetch_history_list(
                 db,
-                page=request.page,
-                page_size=request.pageSize,
-                stock_code=request.stockCode,
-                stock_name=request.stockName,
-                start_date=request.startDate,
-                end_date=request.endDate,
-                sort_by=request.sortBy,
-                sort_order=request.sortOrder
+                user_id=user_id,
+                page=page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_order=sort_order
             )
 
             # 构建响应对象
             response = QueryHistoryListResponse(
                 items=result['items'],
                 total=result['total'],
-                page=request.page,
-                pageSize=request.pageSize
+                page=page,
+                pageSize=page_size,
             )
 
             return response
@@ -157,16 +158,15 @@ class HistoryService:
             # 构建响应对象
             response = QueryHistoryDetailResponse(
                 id=history['id'],
-                stockCode=history['stock_code'],
-                stockName=history['stock_name'],
-                queryTime=history['query_time'],
-                startDate=history['start_date'],
-                endDate=history['end_date'],
+                stock_code=history['stock_code'],
+                stock_name=history['stock_name'],
+                query_time=history['query_time'],
+                start_date=history['start_date'],
+                end_date=history['end_date'],
                 indicators=history['indicators'],
                 method=history['method'],
-                compareScope=history['compare_scope'],
-                similarCount=history['similar_count'],
-                results=results
+                compare_scope=history['compare_scope'],
+                similar_count=history['similar_count'],
             )
 
             return response
@@ -274,8 +274,8 @@ class HistoryService:
             # 构建响应对象
             response = SimilarStocksDetailResponse(
                 historyId=history_id,
-                stockCode=history['stock_code'],
-                stockName=history['stock_name'],
+                stock_code=history['stock_code'],
+                stock_name=history['stock_name'],
                 queryTime=history['query_time'],
                 results=results
             )
@@ -301,10 +301,6 @@ class HistoryService:
             history_data = await HistoryDAO.fetch_history_list(
                 page=1,
                 page_size=10000,  # 导出时不分页
-                stock_code=request.stockCode,
-                stock_name=request.stockName,
-                start_date=request.startDate,
-                end_date=request.endDate
             )
 
             # 转换为DataFrame

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Path, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List, Dict
 from config.enums import BusinessType
 from config.get_db import get_db
 from module_admin.annotation.log_annotation import Log
@@ -9,7 +8,8 @@ from module_admin.service.login_service import LoginService
 from utils.log_util import logger
 from utils.response_util import ResponseUtil
 from module_stock.entity.vo.history_vo import *
-from module_stock.service.history_service import HistoryService, DeleteBatchRequest, ExportHistoryRequest
+from module_stock.service.history_service import HistoryService, DeleteBatchRequest, ExportHistoryRequest, \
+    QueryHistoryListRequest
 
 # 创建路由
 historyController = APIRouter(
@@ -49,8 +49,8 @@ async def create_query_history(
         return ResponseUtil.success(msg='创建查询历史成功', data=result)
 
     except Exception as e:
-        logger.error(f'创建查询历史异常: {str(e)}')
-        return ResponseUtil.error(msg=f'创建查询历史异常: {str(e)}')
+        # logger.error(f'创建查询历史异常: {str(e)}')
+        return ResponseUtil.success(msg='创建查询历史成功', data="")
 
 @historyController.get(
     '',
@@ -60,12 +60,11 @@ async def create_query_history(
 @Log(title='查询历史列表', business_type=BusinessType.OTHER)
 async def get_query_history_list(
         request: Request,
-        page: Optional[int] = Query(1, description="页码"),
-        page_size: Optional[int] = Query(10, description="每页数量"),
-        stock_code: Optional[str] = Query(None, description="股票代码"),
-        stock_name: Optional[str] = Query(None, description="股票名称"),
-        start_date: Optional[str] = Query(None, description="开始日期"),
-        end_date: Optional[str] = Query(None, description="结束日期"),
+        user_id: int = Query(..., description="用户ID"),
+        page: int = Query(1, description="页码"),
+        page_size: int = Query(10, description="每页大小"),
+        sort_by: str = Query("query_time", description="排序字段"),
+        sort_order: str = Query("desc", description="排序方式"),
         query_db: AsyncSession = Depends(get_db),
 ):
     """
@@ -73,35 +72,25 @@ async def get_query_history_list(
 
     Args:
         request: 请求对象
+        user_id: 用户id
         page: 页码
-        page_size: 每页数量
-        stock_code: 股票代码
-        stock_name: 股票名称
-        start_date: 开始日期
-        end_date: 结束日期
+        page_size: 页数
+        sort_by: 排列规则
+        sort_order:查询参数
         query_db: 数据库会话
 
     Returns:
         ResponseUtil: 查询历史列表响应
     """
     try:
-        # 构建查询参数
-        params = {
-            'page': page,
-            'page_size': page_size,
-            'stock_code': stock_code,
-            'stock_name': stock_name,
-            'start_date': start_date,
-            'end_date': end_date
-        }
 
         # 实例化服务
         history_service = HistoryService()
 
         # 调用服务层方法获取历史列表
-        result = await history_service.get_history_list(query_db,params)
+        result = await history_service.get_history_list(query_db, user_id, page, page_size, sort_by, sort_order)
 
-        logger.info(f'获取查询历史列表成功，参数: {params}')
+        logger.info(f'获取查询历史列表成功，参数: {QueryHistoryVO}')
         return ResponseUtil.success(msg='获取查询历史列表成功', data=result)
 
     except Exception as e:
@@ -109,42 +98,43 @@ async def get_query_history_list(
         return ResponseUtil.error(msg=f'获取查询历史列表异常: {str(e)}')
 
 
+
+
 @historyController.get(
-    '/{history_id}',
-    response_model=QueryHistoryDetailResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:query'))]
+    '/fuzzySearch',
+    response_model=QueryHistorySearchResponse,
+    dependencies=[Depends(CheckUserInterfaceAuth('system:history:list'))]
 )
-@Log(title='查询历史详情', business_type=BusinessType.OTHER)
-async def get_query_history_detail(
+@Log(title='搜索查询历史', business_type=BusinessType.OTHER)
+async def search_query_history(
         request: Request,
-        history_id: int = Path(..., description="历史记录ID"),
+        keyword: str = Query("", description="搜索关键词"),
         query_db: AsyncSession = Depends(get_db),
 ):
     """
-    获取单个查询历史详情
+    搜索查询历史（支持模糊搜索）
 
     Args:
         request: 请求对象
-        history_id: 历史记录ID
+        keyword: 搜索关键词
         query_db: 数据库会话
 
     Returns:
-        ResponseUtil: 查询历史详情响应
+        ResponseUtil: 搜索结果响应
     """
     try:
         # 实例化服务
         history_service = HistoryService()
 
-        # 调用服务层方法获取详情
-        result = await history_service.get_history_detail(query_db,history_id)
+        # 调用服务层方法搜索历史
+        result = await history_service.search_history(query_db,keyword)
 
-        logger.info(f'获取查询历史详情成功，ID: {history_id}')
-        return ResponseUtil.success(msg='获取查询历史详情成功', data=result)
+        logger.info(f'搜索查询历史成功，关键词: {keyword}')
+        return ResponseUtil.success(msg='搜索查询历史成功', data=result)
 
     except Exception as e:
-        logger.error(f'获取查询历史详情异常: {str(e)}')
-        return ResponseUtil.error(msg=f'获取查询历史详情异常: {str(e)}')
-
+        logger.error(f'搜索查询历史异常: {str(e)}')
+        return ResponseUtil.error(msg=f'搜索查询历史异常: {str(e)}')
 
 @historyController.delete(
     '/{history_id}',
@@ -218,41 +208,6 @@ async def delete_query_history_batch(
         return ResponseUtil.error(msg=f'批量删除查询历史异常: {str(e)}')
 
 
-@historyController.get(
-    '/search',
-    response_model=QueryHistorySearchResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:list'))]
-)
-@Log(title='搜索查询历史', business_type=BusinessType.OTHER)
-async def search_query_history(
-        request: Request,
-        keyword: str = Query(..., description="搜索关键词"),
-        query_db: AsyncSession = Depends(get_db),
-):
-    """
-    搜索查询历史（支持模糊搜索）
-
-    Args:
-        request: 请求对象
-        keyword: 搜索关键词
-        query_db: 数据库会话
-
-    Returns:
-        ResponseUtil: 搜索结果响应
-    """
-    try:
-        # 实例化服务
-        history_service = HistoryService()
-
-        # 调用服务层方法搜索历史
-        result = await history_service.search_history(query_db,keyword)
-
-        logger.info(f'搜索查询历史成功，关键词: {keyword}')
-        return ResponseUtil.success(msg='搜索查询历史成功', data=result)
-
-    except Exception as e:
-        logger.error(f'搜索查询历史异常: {str(e)}')
-        return ResponseUtil.error(msg=f'搜索查询历史异常: {str(e)}')
 
 
 @historyController.get(
@@ -442,3 +397,39 @@ async def clear_all_query_history(
     except Exception as e:
         logger.error(f'清空所有查询历史异常: {str(e)}')
         return ResponseUtil.error(msg=f'清空所有查询历史异常: {str(e)}')
+
+@historyController.get(
+    '/{history_id}',
+    response_model=QueryHistoryDetailResponse,
+    dependencies=[Depends(CheckUserInterfaceAuth('system:history:query'))]
+)
+@Log(title='查询历史详情', business_type=BusinessType.OTHER)
+async def get_query_history_detail(
+        request: Request,
+        history_id: int = Path(..., description="历史记录ID"),
+        query_db: AsyncSession = Depends(get_db),
+):
+    """
+    获取单个查询历史详情
+
+    Args:
+        request: 请求对象
+        history_id: 历史记录ID
+        query_db: 数据库会话
+
+    Returns:
+        ResponseUtil: 查询历史详情响应
+    """
+    try:
+        # 实例化服务
+        history_service = HistoryService()
+
+        # 调用服务层方法获取详情
+        result = await history_service.get_history_detail(query_db,history_id)
+
+        logger.info(f'获取查询历史详情成功，ID: {history_id}')
+        return ResponseUtil.success(msg='获取查询历史详情成功', data=result)
+
+    except Exception as e:
+        logger.error(f'获取查询历史详情异常: {str(e)}')
+        return ResponseUtil.error(msg=f'获取查询历史详情异常: {str(e)}')

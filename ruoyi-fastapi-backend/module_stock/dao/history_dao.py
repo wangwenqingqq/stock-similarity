@@ -1,10 +1,13 @@
 import logging
+from collections import defaultdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy import select, delete, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from entity.do.history_do import StockHistory
+from entity.do.result_do import StockResult
+from entity.vo.history_vo import SimilarStockResultVO, QueryHistoryVO
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +21,9 @@ class HistoryDAO:
     async def fetch_history_list(
             cls,
             db: AsyncSession,
+            user_id: int,
             page: int = 1,
             page_size: int = 10,
-            stock_code: Optional[str] = None,
-            stock_name: Optional[str] = None,
-            start_date: Optional[str] = None,
-            end_date: Optional[str] = None,
             sort_by: str = 'query_time',
             sort_order: str = 'desc'
     ) -> Dict[str, Any]:
@@ -33,11 +33,8 @@ class HistoryDAO:
         Args:
             db: 数据库会话
             page: 页码
-            page_size: 每页数量
-            stock_code: 股票代码
-            stock_name: 股票名称
-            start_date: 开始日期
-            end_date: 结束日期
+            user_id:用户id
+            page_size:页数
             sort_by: 排序字段
             sort_order: 排序方式
 
@@ -46,22 +43,7 @@ class HistoryDAO:
         """
         try:
             # 构建查询条件
-            query = select(StockHistory)
-
-            # 添加筛选条件
-            filters = []
-            if stock_code:
-                filters.append(StockHistory.stock_code.like(f"%{stock_code}%"))
-            if stock_name:
-                filters.append(StockHistory.stock_name.like(f"%{stock_name}%"))
-            if start_date:
-                filters.append(StockHistory.query_time >= start_date)
-            if end_date:
-                filters.append(StockHistory.query_time <= end_date)
-
-            if filters:
-                query = query.where(and_(*filters))
-
+            query = select(StockHistory).where(StockHistory.user_id == user_id)
             # 添加排序
             sort_column = getattr(StockHistory, sort_by, StockHistory.query_time)
             if sort_order == 'desc':
@@ -79,10 +61,28 @@ class HistoryDAO:
 
             result = await db.execute(query)
             histories = result.scalars().all()
-
+            items = []
+            for history in histories:
+                # 查询与该history相关的相似股票结果
+                similar_query = select(StockResult).where(StockResult.history_id == history.id)
+                similar_result = await db.execute(similar_query)
+                similar_stocks = similar_result.scalars().all()
+                # 转换为VO
+                similar_results = [
+                    SimilarStockResultVO(
+                        stock_code=stock.stock_code,
+                        stock_name=stock.stock_name,
+                        similarity=stock.similarity
+                    ).dict()
+                    for stock in similar_stocks
+                ]
+                # 返回字典中增加similar_results
+                item = history.to_dict()
+                item['similar_results'] = similar_results
+                items.append(item)
             return {
                 'total': total,
-                'items': [history.to_dict() for history in histories]
+                'items': items
             }
         except Exception as e:
             logger.error(f"获取查询历史列表失败: {e}")
@@ -99,8 +99,9 @@ class HistoryDAO:
             indicators: List[str],
             method: str,
             compare_scope: str,
+            similar_results: List[SimilarStockResultVO],
             similar_count: int = 10,
-            user_id: str = None,
+            user_id: int = None,
             remark: Optional[str] = None,
             status:int = 1,
     ) -> int:
@@ -120,6 +121,7 @@ class HistoryDAO:
             user_id: 用户ID
             remark: 备注
             status: 状态
+            similar_results: 查询的相似股票
         Returns:
             int: 新创建的历史记录ID
         """
@@ -134,18 +136,31 @@ class HistoryDAO:
                 method=method,
                 compare_scope=compare_scope,
                 similar_count=similar_count,
-                user_id=user_id or "system",  # 默认用户ID
+                user_id=user_id,  # 默认用户ID
                 remark=remark,
                 query_time=datetime.now(),
                 status=1
             )
-
             # 添加到数据库并提交
             db.add(new_history)
             await db.commit()
+            await db.refresh(new_history)  # 刷新以获取生成的ID
+            # 获取新创建的历史记录ID
+            history_id = new_history.id
+            # 将相似股票结果添加到StockResult模型
+            if similar_results and len(similar_results) > 0:
+                # 创建结果记录
+                for result in similar_results:
+                    stock_result = StockResult(
+                        history_id=history_id,  # 关联到刚创建的历史记录
+                        stock_code=result.stock_code,
+                        stock_name=result.stock_name,
+                        similarity=result.similarity,
+                    )
+                    db.add(stock_result)
 
-            # 刷新实例以获取数据库生成的值（如自增ID）
-            await db.refresh(new_history)
+                # 批量提交所有结果
+                await db.commit()
 
             logger.info(f"创建查询历史记录成功，ID: {new_history.id}, 股票代码: {stock_code}")
             return new_history.id
@@ -237,30 +252,52 @@ class HistoryDAO:
             logger.error(f"批量删除历史记录失败: {e}")
             raise
 
+    from typing import List
+    from collections import defaultdict
+
     @classmethod
-    async def search_history(cls, db: AsyncSession, keyword: str) -> List[Dict[str, Any]]:
+    async def search_history(cls, db: AsyncSession, keyword: str) -> List[QueryHistoryVO]:
         """
-        搜索历史记录
-
-        Args:
-            db: 数据库会话
-            keyword: 搜索关键词
-
-        Returns:
-            List[Dict]: 历史记录列表
+        搜索历史记录，并附带每条历史的结果
         """
         try:
+            # 1. 查询 StockHistory
             query = select(StockHistory).where(
                 or_(
-                    StockHistory.stock_code.like(f"%{keyword}%"),
-                    StockHistory.stock_name.like(f"%{keyword}%")
+                    StockHistory.stock_code.ilike(f"%{keyword}%"),
+                    StockHistory.stock_name.ilike(f"%{keyword}%")
                 )
             ).order_by(StockHistory.query_time.desc())
 
             result = await db.execute(query)
             histories = result.scalars().all()
 
-            return [history.to_dict() for history in histories]
+            # 2. 批量查出所有相关的 StockResult
+            history_ids = [h.id for h in histories]
+            if history_ids:
+                result_query = select(StockResult).where(StockResult.history_id.in_(history_ids))
+                result_result = await db.execute(result_query)
+                all_results = result_result.scalars().all()
+            else:
+                all_results = []
+
+            # 3. 按 historyId 分组
+            result_map = defaultdict(list)
+            for r in all_results:
+                result_map[r.history_id].append(r)  # 注意这里是 history_id
+
+            # 4. 组装结果
+            def history_to_vo(history):
+                # 组装 similar_results
+                similar_results = [
+                    SimilarStockResultVO(**res.to_dict()) for res in result_map.get(history.id, [])
+                ]
+                # 组装 QueryHistoryVO
+                history_dict = history.to_dict()
+                history_dict['similar_results'] = similar_results
+                return QueryHistoryVO(**history_dict)
+
+            return [history_to_vo(h) for h in histories]
         except Exception as e:
             logger.error(f"搜索历史记录失败，关键词: {keyword}, 错误: {e}")
             raise
