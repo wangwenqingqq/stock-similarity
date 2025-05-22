@@ -341,7 +341,7 @@ async function querySearchAsync(queryString, cb) {
 // 选择建议项时
 function handleAutoSelect(stock) {
   selectedStock.value = stock;
-  searchKeyword.value = stock.name + '（' + stock.code + '）';
+  searchKeyword.value = stock.code;
   // 也可以自动触发详情加载
 }
 // 监听显示股票变化
