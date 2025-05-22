@@ -1,7 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, UniqueConstraint, func
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from config.database import Base
 
 
 class StockWatchlist(Base):
