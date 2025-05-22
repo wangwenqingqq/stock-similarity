@@ -1,10 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from datetime import datetime
 from typing import Dict, Any
 
-Base = declarative_base()
+from config.database import Base
 
 
 class StockResult(Base):
@@ -17,8 +14,9 @@ class StockResult(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
 
     # 关联历史记录
-    history_id = Column(Integer, ForeignKey('stock_similarity_history.id'), nullable=False, index=True,
-                        comment='历史记录ID')
+    # 在StockResult类中修改
+    history_id = Column(Integer,
+                        nullable=False, index=True, comment='历史记录ID')
 
     # 相似股票信息
     stock_code = Column(String(20), nullable=False, index=True, comment='相似股票代码')
@@ -26,10 +24,8 @@ class StockResult(Base):
 
     # 相似度指标
     similarity = Column(Float, nullable=False, comment='相似度分数')
-    return_rate = Column(Float, default=0.0, comment='收益率对比')
 
     # 时间信息
-    create_time = Column(DateTime, default=datetime.now, nullable=False, comment='创建时间')
 
 
 
@@ -46,8 +42,6 @@ class StockResult(Base):
             'stock_code': self.stock_code,
             'stock_name': self.stock_name,
             'similarity': self.similarity,
-            'return_rate': self.return_rate,
-            'create_time': self.create_time.isoformat() if self.create_time else None
         }
 
     def __repr__(self):
