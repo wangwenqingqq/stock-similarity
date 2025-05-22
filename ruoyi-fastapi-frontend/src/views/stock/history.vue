@@ -9,7 +9,7 @@
         type="text"
         placeholder="搜索股票代码或名称"
         class="search-input"
-        @input="handleSearch"
+        @input="debouncedSearch"
       />
       <button v-if="searchKeyword" @click="clearSearch" class="clear-button">
         清空
@@ -19,40 +19,44 @@
     <div class="query-list">
       <div
         v-for="query in filteredQueryHistory"
-        :key="query.id"
+        :key="query.query_time"
         class="query-item"
-        :class="{ 'expanded': expandedItems.includes(query.id) }"
-        @click="toggleExpand(query.id)"
+        :class="{ 'expanded': expandedItems.includes(query.query_time) }"
+        @click="toggleExpand(query.query_time)"
       >
         <!-- 折叠状态显示的摘要信息 -->
         <div class="query-summary">
           <div class="summary-left">
-            <span class="stock-code" v-html="highlightText(query.stockCode)"></span>
-            <span class="stock-name" v-html="highlightText(query.stockName)"></span>
-            <span class="query-time">{{ formatDate(query.queryTime) }}</span>
+            <span class="stock-code" v-html="highlightText(query.stock_code)"></span>
+            <span class="stock-name" v-html="highlightText(query.stock_name)"></span>
+            <span class="query-time">{{ formatDate(query.query_time) }}</span>
           </div>
           <div class="summary-right">
-            <span class="result-count">找到 {{ query.results.length }} 个相似股票</span>
-            <i :class="expandedItems.includes(query.id) ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"></i>
+            <span class="result-count">找到 {{ query.similar_count }} 个相似股票</span>
+            <i :class="expandedItems.includes(query.query_time) ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"></i>
           </div>
         </div>
         
         <!-- 展开状态显示的详细信息 -->
-        <div v-if="expandedItems.includes(query.id)" class="query-details">
+        <div v-if="expandedItems.includes(query.query_time)" class="query-details">
           <div class="detail-section">
             <h4>查询条件</h4>
             <div class="detail-grid">
               <div class="detail-item">
                 <label>股票代码：</label>
-                <span>{{ query.stockCode }}</span>
+                <span>{{ query.stock_code }}</span>
               </div>
               <div class="detail-item">
                 <label>股票名称：</label>
-                <span>{{ query.stockName }}</span>
+                <span>{{ query.stock_name }}</span>
               </div>
               <div class="detail-item">
                 <label>时间段：</label>
-                <span>{{ query.startDate }} 至 {{ query.endDate }}</span>
+                <span>{{ query.start_date }} 至 {{ query.end_date }}</span>
+              </div>
+              <div class="detail-item">
+                <label>时间长度：</label>
+                <span>{{ getDuration(query.start_date, query.end_date) }}</span>
               </div>
               <div class="detail-item">
                 <label>选择指标：</label>
@@ -64,11 +68,11 @@
               </div>
               <div class="detail-item">
                 <label>对比范围：</label>
-                <span>{{ query.compareScope }}</span>
+                <span>{{ query.compare_scope }}</span>
               </div>
               <div class="detail-item">
                 <label>相似个数：</label>
-                <span>{{ query.similarCount }}</span>
+                <span>{{ query.similar_count }}</span>
               </div>
             </div>
           </div>
@@ -82,20 +86,14 @@
                   <th>股票代码</th>
                   <th>股票名称</th>
                   <th>相似度</th>
-                  <th>收益率对比</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(result, index) in query.results" :key="result.stockCode">
+                <tr v-for="(result, index) in query.similar_results" :key="result.stock_code">
                   <td>{{ index + 1 }}</td>
-                  <td>{{ result.stockCode }}</td>
-                  <td>{{ result.stockName }}</td>
+                  <td>{{ result.stock_code }}</td>
+                  <td>{{ result.stock_name }}</td>
                   <td>{{ (result.similarity * 100).toFixed(2) }}%</td>
-                  <td>
-                    <span :class="result.returnRate > 0 ? 'positive' : 'negative'">
-                      {{ result.returnRate > 0 ? '+' : '' }}{{ result.returnRate.toFixed(2) }}%
-                    </span>
-                  </td>
                 </tr>
               </tbody>
             </table>
@@ -118,17 +116,24 @@ import {
   searchQueryHistory, 
   deleteQueryHistory 
 } from '@/api/stock/stockHistory'
-
+import useUserStore from '@/store/modules/user';
+import { debounce } from 'lodash'
+// 用户store
+const userStore = useUserStore();
+// 获取用户ID
+const currentUserId = computed(() => userStore.id);
 // 获取查询历史
 const fetchHistory = async () => {
   try {
-    const response = await getQueryHistoryList({
+    const params = {
+      user_id: currentUserId.value,
       page: 1,
-      pageSize: 10,
-      orderBy: 'queryTime',
-      order: 'desc'
-    })
-    queryHistory.value = response.data
+      page_size: 10,
+      sort_by: 'query_time',
+      sort_order: 'desc'
+    }
+    const response = await getQueryHistoryList(params)
+    queryHistory.value = response.data.items
   } catch (error) {
     console.error('获取历史记录失败', error)
   }
@@ -138,11 +143,15 @@ const fetchHistory = async () => {
 const handleSearch = async () => {
   try {
     const response = await searchQueryHistory(searchKeyword.value)
-    queryHistory.value = response.data
+    queryHistory.value = response.data.items
   } catch (error) {
-    console.error('搜索失败', error)
+    queryHistory.value = []
   }
 }
+// 防抖函数
+const debouncedSearch = debounce(() => {
+  handleSearch()
+}, 300)
 
 // 删除记录
 const handleDelete = async (historyId) => {
@@ -160,84 +169,26 @@ const expandedItems = ref([])
 // 搜索关键词
 const searchKeyword = ref('')
 
-// 模拟的查询历史数据
-const queryHistory = ref([
-  {
-    id: 1,
-    stockCode: '000001.SZ',
-    stockName: '平安银行',
-    queryTime: new Date('2024-05-15 10:30:00'),
-    startDate: '2023-01-01',
-    endDate: '2024-05-01',
-    indicators: ['收益率', '波动率', '成交量'],
-    method: '皮尔逊相关系数',
-    compareScope: '全部A股',
-    similarCount: 10,
-    results: [
-      { stockCode: '000002.SZ', stockName: '万科A', similarity: 0.92, returnRate: 5.23 },
-      { stockCode: '000858.SZ', stockName: '五粮液', similarity: 0.88, returnRate: -2.15 },
-      { stockCode: '000333.SZ', stockName: '美的集团', similarity: 0.85, returnRate: 8.76 }
-    ]
-  },
-  {
-    id: 2,
-    stockCode: '600036.SH',
-    stockName: '招商银行',
-    queryTime: new Date('2024-05-14 16:20:00'),
-    startDate: '2023-06-01',
-    endDate: '2024-05-01',
-    indicators: ['市盈率', '市净率'],
-    method: '余弦相似度',
-    compareScope: '银行板块',
-    similarCount: 5,
-    results: [
-      { stockCode: '601166.SH', stockName: '兴业银行', similarity: 0.95, returnRate: 3.45 },
-      { stockCode: '601398.SH', stockName: '工商银行', similarity: 0.91, returnRate: 1.23 }
-    ]
-  },
-  {
-    id: 3,
-    stockCode: '002415.SZ',
-    stockName: '海康威视',
-    queryTime: new Date('2024-05-13 14:15:00'),
-    startDate: '2023-03-01',
-    endDate: '2024-05-01',
-    indicators: ['成交量', '换手率'],
-    method: '欧几里得距离',
-    compareScope: '科技板块',
-    similarCount: 8,
-    results: [
-      { stockCode: '002230.SZ', stockName: '科大讯飞', similarity: 0.89, returnRate: 12.34 },
-      { stockCode: '300124.SZ', stockName: '汇川技术', similarity: 0.86, returnRate: -5.67 }
-    ]
-  }
-])
-
+const queryHistory = ref([])
 // 过滤后的查询历史（根据搜索关键词）
 const filteredQueryHistory = computed(() => {
   if (!searchKeyword.value) {
     return queryHistory.value
   }
-  
-  const keyword = searchKeyword.value.toLowerCase()
-  return queryHistory.value.filter(query => {
-    return query.stockCode.toLowerCase().includes(keyword) ||
-           query.stockName.toLowerCase().includes(keyword)
-  })
+  return queryHistory.value
 })
+
 
 // 清空搜索
 const clearSearch = () => {
   searchKeyword.value = ''
+  fetchHistory()
 }
 
 // 高亮搜索关键词
 const highlightText = (text) => {
-  if (!searchKeyword.value) {
-    return text
-  }
-  
-  const keyword = searchKeyword.value
+  if (!searchKeyword.value) return text
+  const keyword = searchKeyword.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const regex = new RegExp(`(${keyword})`, 'gi')
   return text.replace(regex, '<span class="highlight">$1</span>')
 }
@@ -257,11 +208,21 @@ const formatDate = (date) => {
   const d = new Date(date)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+function getDuration(start, end) {
+  if (!start || !end) return ''
+  // 只取日期部分，防止有时分秒影响
+  const startDate = new Date(start.split(' ')[0])
+  const endDate = new Date(end.split(' ')[0])
+  // 计算毫秒差
+  const diffTime = endDate - startDate
+  // 计算天数差（包含起止日+1）
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1
+  return `${diffDays}天`
+}
 
 // 组件挂载时可以从API获取真实数据
 onMounted(() => {
-  // 这里可以添加API调用来获取真实的查询历史数据
-  // fetchQueryHistory()
+  fetchHistory()
 })
 </script>
 

@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { da } from 'element-plus/es/locale/index.mjs';
 
 // 获取相似性计算查询历史列表
 export function getQueryHistoryList(params) {
@@ -6,7 +7,7 @@ export function getQueryHistoryList(params) {
   return request({
     url: '/system/history',
     method: 'get',
-    params: params
+    params
   }).then(res => {
     console.log('查询历史列表API响应:', res);
     return res;
@@ -83,7 +84,7 @@ export function deleteQueryHistoryBatch(historyIds) {
 export function searchQueryHistory(keyword) {
   console.log('搜索查询历史关键词:', keyword);
   return request({
-    url: '/system/history/search',
+    url: '/system/history/fuzzySearch',
     method: 'get',
     params: {
       keyword: keyword

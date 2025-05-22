@@ -16,3 +16,20 @@ export function calculateStockSimilarity(data) {
     throw err;
   });
 }
+
+// 搜索查询历史（支持模糊搜索）
+export function fuzzySearch(keyword) {
+  return request({
+    url: '/system/stockSimilarity/fuzzySearch',
+    method: 'get',
+    params: {
+      keyword: keyword
+    }
+  }).then(res => {
+    console.log('模糊搜索API响应:', res);
+    return res;
+  }).catch(err => {
+    console.error('模糊搜索请求失败:', err);
+    throw err;
+  });
+}

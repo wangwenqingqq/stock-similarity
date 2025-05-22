@@ -54,7 +54,7 @@ export function fetchStockList(params) {
 
 
 export function loadKlineData(stockCode, params) {
-  // console.log('加载K线图数据请求参数:', { stockCode, params });
+  // console.log('加载K线图数据请求参数:', { stock_code, params });
   
   return request({
     url: `/system/return/kline/${stockCode}`,

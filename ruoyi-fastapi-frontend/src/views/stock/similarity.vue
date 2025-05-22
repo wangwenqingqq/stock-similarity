@@ -6,7 +6,7 @@
             <span class="font-bold">股票相似性分析工具</span>
           </div>
         </template>
-  
+
         <!-- 查询区域 -->
       <el-card class="box-card mb-4">
         <template #header>
@@ -16,20 +16,34 @@
           </template>
         <el-form :model="queryParams" ref="queryRef" :inline="true">
           <el-form-item label="股票代码" prop="stockCode">
-            <el-input
+            <el-autocomplete
               v-model="queryParams.stockCode"
+              :fetch-suggestions="fuzzySearchUnified"
               placeholder="请输入股票代码（如: 600000）"
               clearable
               style="width: 200px"
-            />  
+              :popper-class="'full-dropdown'"
+              @select="handleStockSelect"
+            >
+            <template #default="{ item }">
+                <div>{{ item.stock_code }} {{ item.value }}</div>
+              </template>
+            </el-autocomplete>
           </el-form-item>
           <el-form-item label="股票名称" prop="stockName">
-            <el-input
+            <el-autocomplete
               v-model="queryParams.stockName"
+              :fetch-suggestions="fuzzySearchUnified"
               placeholder="可输入股票名称（如: 浦发银行）"
               clearable
               style="width: 200px"
-            />  
+              :popper-class="'full-dropdown'"
+              @select="handleStockSelect"
+            >
+            <template #default="{ item }">
+                <div>{{ item.stock_code }} {{ item.value }}</div>
+              </template>
+            </el-autocomplete>
           </el-form-item>
           <el-form-item label="开始日期" prop="startDate">
             <el-date-picker
@@ -59,7 +73,7 @@
               <span>调整参数</span>
             </div>
           </template>
-          
+
           <el-form :model="queryParams" label-width="120px">
             <el-form-item label="相似性计算方法" prop="similarityMethod">
               <el-select v-model="queryParams.similarityMethod" placeholder="请选择计算方法" style="width: 100%">
@@ -69,11 +83,16 @@
                 <el-option label="动态规整算法" value="dtw" />
                 <el-option label="图编辑距离" value="graphEditing" />
                 <el-option label="最大公共子图" value="maxCommonSubgraph" />
-                <el-option label="图神经网络" value="gnn" />
+                <el-option label="形态相似性" value="shape" />
+                <el-option label="位置相似性" value="position" />
               </el-select>
             </el-form-item>
 
-            <el-form-item label="指标选择" prop="indicators">
+            <el-form-item
+              label="指标选择"
+              prop="indicators"
+              v-if="!['shape', 'position'].includes(queryParams.similarityMethod)"
+            >
               <el-checkbox-group v-model="queryParams.indicators">
                 <el-checkbox label="turnover">换手率</el-checkbox>
                 <el-checkbox label="high">最高价涨幅</el-checkbox>
@@ -111,10 +130,10 @@
                 <span>分析结果</span>
               </div>
             </template>
-  
+
             <div v-if="!loading">
               <el-divider content-position="left">最相似的股票列表</el-divider>
-              
+
               <el-row :gutter="20">
                 <el-col :xs="24" :sm="12" :md="8" v-for="(stock, index) in similarStocks" :key="index">
                   <el-card shadow="hover" class="mb-4">
@@ -131,7 +150,7 @@
                   </el-card>
                 </el-col>
               </el-row>
-  
+
               <el-divider content-position="left">收益率对比</el-divider>
               <div ref="chartRef" style="width: 100%; height: 400px;"></div>
             </div>
@@ -140,9 +159,9 @@
       </el-card>
     </div>
   </template>
-  
+
   <script setup name="StockSimilarity">
-  import { ref, reactive, watch,onMounted, onUnmounted, nextTick, toRefs } from 'vue';
+  import { ref, reactive, watch, onMounted, onUnmounted, nextTick, toRefs, computed,getCurrentInstance  } from 'vue';
   import { useRoute } from 'vue-router';
   import * as echarts from 'echarts/core';
   import { LineChart } from 'echarts/charts';
@@ -155,12 +174,12 @@
     DataZoomComponent
   } from 'echarts/components';
   import { CanvasRenderer } from 'echarts/renderers';
-  import { calculateStockSimilarity } from '@/api/stock/stockSimilar.js';
+  import { calculateStockSimilarity,fuzzySearch } from '@/api/stock/stockSimilar.js';
   import { ElMessage } from 'element-plus';
   import useUserStore from '@/store/modules/user';
   import { addQueryHistoryList } from '../../api/stock/stockHistory';
   const { proxy } = getCurrentInstance();
-  
+
   // 注册 ECharts 组件
   echarts.use([
     TitleComponent,
@@ -192,12 +211,15 @@
       similarCount: 3
     }
   });
+  const stockOptions = ref([]); // 候选项
+  const showDropdown = ref(false); // 这个变量现在可能不再需要直接控制下拉框显示，但可以保留用于其他目的
+
   // 用户store
   const userStore = useUserStore();
   // 获取用户ID
   const currentUserId = computed(() => userStore.id);
   const { queryParams } = toRefs(data);
-  
+
   // 图表实例
   let chartInstance = null;
 
@@ -206,13 +228,13 @@
     const maxDate = new Date('2025-02-19')
     // 禁用早于1990-12-18的日期
   const disabledStartDate = (time) => {
-    return time < minDate || time > maxDate || 
+    return time < minDate || time > maxDate ||
            (queryParams.endDate && time > queryParams.endDate)
   }
 
   // 禁用晚于2025-02-19的日期
   const disabledEndDate = (time) => {
-    return time < minDate || time > maxDate || 
+    return time < minDate || time > maxDate ||
            (queryParams.startDate && time < queryParams.startDate)
   }
 
@@ -224,20 +246,20 @@
     console.log('similarStocks:', similarStocks.value);
     console.log('chartRef:', chartRef.value);
     window.addEventListener('resize', handleResize);
-    
+
     // 新增：检查URL参数并填充表单
     if (route.query.stockCode) {
       console.log('检测到路由参数:', route.query);
-      
+
       // 填充股票代码
       queryParams.value.stockCode = route.query.stockCode;
-      
+
       // 填充开始日期和结束日期（如果存在）
       if (route.query.startTime) {
         // 确保日期格式正确
         queryParams.value.startDate = new Date(route.query.startTime);
       }
-      
+
       if (route.query.endTime) {
         // 确保日期格式正确
         queryParams.value.endDate = new Date(route.query.endTime);
@@ -245,24 +267,62 @@
       if(route.query.stockName) {
         queryParams.value.stockName = route.query.stockName;
       }
-      
+
       // 可选：自动触发查询
       // 如果希望页面加载后自动执行查询，可以取消下面这行的注释
       // nextTick(() => calculateSimilarity());
     }
-    
+
     console.log('showResults:', showResults.value);
     console.log('similarStocks:', similarStocks.value);
     console.log('chartRef:', chartRef.value);
   });
-  
+
   onUnmounted(() => {
     window.removeEventListener('resize', handleResize);
     if (chartInstance) {
       chartInstance.dispose();
     }
   });
-  
+
+
+  // 股票代码输入时自动模糊搜索 (el-autocomplete 会调用 cb)
+async function fuzzySearchUnified(queryString, cb) {
+  console.log(`--- fuzzySearchUnified triggered for: "${queryString}" ---`);
+  if (!queryString) {
+    console.log("Empty queryString, calling cb([])");
+    stockOptions.value = [];
+    cb([]);
+    // showDropdown.value = false; // 移除此行
+    return;
+  }
+  try {
+    const res = await fuzzySearch(queryString);
+    const list = (res.data || []).map(item => ({
+      value: item.name, 
+      stock_code: item.code 
+    }));
+
+
+    stockOptions.value = list; // 更新本地状态
+    cb(list); // 调用回调函数传递给 el-autocomplete
+
+  } catch (e) {
+    console.error("模糊搜索出错:", e); // 打印错误信息
+    stockOptions.value = [];
+    cb([]); // 搜索出错也调用回调函数，并传递空数组
+     console.log("cb([]) called due to error");
+  }
+   console.log(`--- fuzzySearchUnified finished for: "${queryString}" ---`);
+}
+
+function handleStockSelect(item) {
+  queryParams.value.stockName = item.value;
+  queryParams.value.stockCode = item.stock_code;
+  showDropdown.value = false; // 保留这行，选中后隐藏自定义控制的下拉框
+  stockOptions.value = []; // 保留这行，清空候选项
+}
+
   // 方法
   function getDefaultStartDate() {
     const endDate = new Date('2025-02-18');
@@ -274,7 +334,7 @@
 function getDefaultEndDate() {
     return '2025-02-18';
 }
-  
+
   function handleResize() {
     if (chartInstance) {
       chartInstance.resize();
@@ -284,7 +344,7 @@ function getDefaultEndDate() {
   const d = new Date(date);
   return d.toISOString().split('T')[0];
 }
-  
+
   function getSimilarityClass(similarity) {
     // if (similarity > 0.2) return 'text-danger';
     // if (similarity > 0.1) return 'text-warning';
@@ -294,7 +354,7 @@ function getDefaultEndDate() {
     if (value >= 0.6) return 'text-warning';
     return 'text-danger';
   }
-  
+
   function resetQueryStock() {
   // 修改这里，确保表单引用存在
   if (proxy.$refs["queryRef"]) {
@@ -308,7 +368,7 @@ function getDefaultEndDate() {
   }
   showResults.value = false;
 }
-  
+
 function resetQuery() {
   // 修改这里，确保表单引用存在
   if (proxy.$refs["queryRef"]) {
@@ -327,17 +387,17 @@ function resetQuery() {
       ElMessage.warning('请输入股票代码');
       return;
     }
-    
+
     if (queryParams.value.indicators.length === 0) {
       ElMessage.warning('请至少选择一个指标');
       return;
     }
-    
+
     loading.value = true;
     showResults.value = true;
       // 先等待DOM更新
     await nextTick();
-    
+
     try {
       const result = await calculateStockSimilarity({
         stockCode: queryParams.value.stockCode,
@@ -350,7 +410,7 @@ function resetQuery() {
       });
       console.log('后端返回数据:', result);
       similarStocks.value = result.data.similarStocks;
-      
+
        // 再次等待DOM更新，确保结果区域已渲染
       await nextTick();
       // 再等一下以确保所有DOM都已渲染完成
@@ -358,17 +418,25 @@ function resetQuery() {
         drawChart(result.data.performanceData);
       }, 100);
       ElMessage.success('分析完成');
+      console.log("用户ID:", currentUserId.value);
+  ;
       const historyData = {
-        stockCode: queryParams.value.stockCode,
-        stockName: queryParams.value.stockName,
-        startDate: formatDate(queryParams.value.startDate),
-        endDate: formatDate(queryParams.value.endDate),
+        stock_code: queryParams.value.stockCode,  // 改为下划线命名
+        stock_name: queryParams.value.stockName || "未知",  // 确保不为空
+        start_date: formatDate(queryParams.value.startDate),
+        end_date: formatDate(queryParams.value.endDate),
         indicators: queryParams.value.indicators,
         method: queryParams.value.similarityMethod,
-        compareScope: String(queryParams.value.sectionLevel), // 修改字段名并确保是字符串
-        similarCount: parseInt(queryParams.value.similarCount, 10), 
-        userId: String(currentUserId.value), // 确保是字符串类型
-        status: 1
+        compare_scope: String(queryParams.value.sectionLevel),
+        similar_count: parseInt(queryParams.value.similarCount, 10),
+        user_id: currentUserId.value,  // 转为整数
+        status: 1,
+        query_time: new Date().toISOString(),
+        similar_results: similarStocks.value.map(stock => ({
+          stock_code: stock.code,  // 修改嵌套对象的字段名
+          stock_name: stock.name,
+          similarity: stock.similarity
+        }))
       }
         try {
           const response = await addQueryHistoryList(historyData);
@@ -376,15 +444,15 @@ function resetQuery() {
           ElMessage.success('查询历史记录保存成功');
         } catch (error) {
           console.error('提交失败:', error);
-          
+
           // 打印详细的错误信息
           if (error.response && error.response.data) {
             console.error('错误响应数据:', JSON.stringify(error.response.data, null, 2));
-            
+
             if (error.response.data.detail) {
               // 完整打印详情数组
               console.error('验证错误详情:', JSON.stringify(error.response.data.detail, null, 2));
-              
+
               let errorMsg = '';
               if (Array.isArray(error.response.data.detail)) {
                 errorMsg = error.response.data.detail.map(item => {
@@ -416,7 +484,7 @@ function drawChart(data) {
   if (!chartRef.value) {
     console.error('图表引用不存在，可能是DOM尚未渲染');
     // 更长的延迟
-    setTimeout(() => drawChart(data), 200);
+    setTimeout(() => drawChart(data), 300);
     return;
   }
   // 增强数据验证
@@ -424,13 +492,13 @@ function drawChart(data) {
     console.error('图表数据为空或未定义');
     return;
   }
-  
+
   // 打印数据结构以便调试
   // console.log('数据类型:', typeof data);
   if (typeof data === 'object') {
     console.log('数据属性:', Object.keys(data));
   console.log('图表引用状态:', chartRef.value);
-  
+
   // 如果图表引用不存在，使用setTimeout尝试延迟绘制
   if (!chartRef.value) {
     console.warn('图表引用暂时不存在，将在100ms后重试');
@@ -442,9 +510,9 @@ function drawChart(data) {
         console.error('延迟后仍未找到图表引用，绘制失败');
       }
     }, 100);
-    return; 
+    return;
   }
-  
+
   // 如果图表引用存在，直接绘制
   drawChartImplementation(data);
   }
@@ -457,7 +525,7 @@ function drawChartImplementation(data) {
     console.error('图表数据为空或未定义');
     return;
   }
-  
+
   // 检查数据结构
   if (!data || !data.stocks || !data.dates) {
     console.error('图表数据结构不正确');
@@ -467,16 +535,16 @@ function drawChartImplementation(data) {
     stocks: data.stocks,
     dates: data.dates
   });
-  
+
   // 如果已存在图表实例，先销毁
   if (chartInstance) {
     chartInstance.dispose();
   }
-  
+
   // 初始化图表
   try {
     chartInstance = echarts.init(chartRef.value);
-    
+
     // 确保每个股票都有returns属性
     const series = data.stocks.map(stock => {
       if (!stock.data || !Array.isArray(stock.data)) {
@@ -488,7 +556,7 @@ function drawChartImplementation(data) {
           smooth: true
         };
       }
-      
+
       return {
         name: `${stock.code} ${stock.name || ''}`,
         type: 'line',
@@ -496,7 +564,7 @@ function drawChartImplementation(data) {
         smooth: true
       };
     });
-    
+
     const option = {
       // 图表配置保持不变
       tooltip: {
@@ -551,63 +619,63 @@ function drawChartImplementation(data) {
         }
       ]
     };
-    
+
     chartInstance.setOption(option);
     console.log('图表绘制成功');
   } catch (error) {
     console.error('绘制图表时出错:', error);
   }
 }
-  
+
   </script>
-  
+
   <style scoped>
   .app-container {
     padding: 20px;
   }
-  
+
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  
+
   .mb-4 {
     margin-bottom: 16px;
   }
-  
+
   .font-bold {
     font-weight: bold;
   }
-  
+
   .text-gray {
     color: #909399;
   }
-  
+
   .text-danger {
     color: #f56c6c;
   }
-  
+
   .text-warning {
     color: #e6a23c;
   }
-  
+
   .text-primary {
     color: #409eff;
   }
-  
+
   .mt-2 {
     margin-top: 8px;
   }
-  
+
   .flex {
     display: flex;
   }
-  
+
   .justify-between {
     justify-content: space-between;
   }
-  
+
   .bg-gray {
     background-color: #f5f7fa;
   }

@@ -4,14 +4,16 @@
     <div class="header">
       <h1>股票相似性计算系统</h1>
       <div class="search-box">
-        <el-input
+        <el-autocomplete
           v-model="searchKeyword"
+          :fetch-suggestions="querySearchAsync"
           placeholder="输入股票代码或名称"
           :prefix-icon="Search"
           clearable
           @clear="handleClear"
-          @keyup.enter="handleSearch"
-        ></el-input>
+          @select="handleAutoSelect"
+          style="width: 250px;"
+        ></el-autocomplete>
         <el-button type="primary" @click="handleSearch">搜索</el-button>
       </div>
     </div>
@@ -69,13 +71,22 @@
         <!-- 添加关注按钮列 -->
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button 
-              size="small" 
-              type="primary" 
+            <el-button
+              v-if="!isWatched(row)"
+              size="small"
+              type="danger"
               @click="handleAddToWatchlist(row)"
               :loading="row.addingToWatchlist"
             >
               关注
+            </el-button>
+            <el-button
+              v-else
+              size="small"
+              type="warning"
+              disabled
+            >
+              已关注
             </el-button>
           </template>
         </el-table-column>
@@ -204,45 +215,6 @@
           </el-col>
         </el-row>
       </div>
-
-      <!-- 相似股票列表 -->
-      <div class="similar-stocks" v-if="similarStocks.length > 0">
-        <h3>相似股票</h3>
-        <el-table
-          :data="similarStocks"
-          border
-          highlight-current-row
-          @current-change="handleSimilarStockSelect"
-          style="width: 100%"
-        >
-          <el-table-column prop="code" label="代码" width="120"></el-table-column>
-          <el-table-column prop="name" label="名称" width="180"></el-table-column>
-          <el-table-column prop="similarity" label="相似度" width="120">
-            <template #default="{ row }">
-              <span>{{ ((parseFloat(row.similarity) || 0) * 100).toFixed(2) + '%' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="seven_day_return" label="7日收益率" width="140">
-            <template #default="{ row }">
-              <span :class="row.seven_day_return >= 0 ? 'up-text' : 'down-text'">
-                {{ (row.seven_day_return >= 0 ? '+' : '') + (parseFloat(row.seven_day_return) || 0).toFixed(2) + '%' }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="price" label="当前价" width="120">
-            <template #default="{ row }">
-              <span>{{ (parseFloat(row.price) || 0).toFixed(2) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="change_rate" label="涨跌幅" min-width="120">
-            <template #default="{ row }">
-              <span :class="row.change_rate >= 0 ? 'up-text' : 'down-text'">
-                {{ (row.change_rate >= 0 ? '+' : '') + (parseFloat(row.change_rate) || 0).toFixed(2) + '%' }}
-              </span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
     </div>
   </div>
 </template>
@@ -257,7 +229,7 @@ import { ElMessage } from 'element-plus';
 // 导入API方法
 // 注意：根据你的实际API导入路径可能需要调整
 import { fetchStockList, loadKlineData as apiLoadKlineData } from '@/api/stock/stockReturn';
-import {addToWatchlist} from '@/api/stock/stockWatchlist';
+import {addToWatchlist,getWatchlist} from '@/api/stock/stockWatchlist';
 import useUserStore from '@/store/modules/user';
 // 响应式状态
 const searchKeyword = ref('');
@@ -337,6 +309,41 @@ onUnmounted(() => {
   }
 });
 
+async function querySearchAsync(queryString, cb) {
+  if (!queryString) {
+    cb([]);
+    return;
+  }
+  try {
+    // 这里建议后端接口支持模糊搜索
+    const params = {
+      page: 1,
+      page_size: 10,
+      keyword: queryString
+    };
+    const response = await fetchStockList(params);
+    let results = [];
+    if (response.data && Array.isArray(response.data.items)) {
+      results = response.data.items;
+    } else if (response.data && Array.isArray(response.data)) {
+      results = response.data;
+    }
+    // 返回格式：label和value
+    cb(results.map(item => ({
+      value: item.name + '（' + item.code + '）',
+      ...item
+    })));
+  } catch (e) {
+    cb([]);
+  }
+}
+
+// 选择建议项时
+function handleAutoSelect(stock) {
+  selectedStock.value = stock;
+  searchKeyword.value = stock.name + '（' + stock.code + '）';
+  // 也可以自动触发详情加载
+}
 // 监听显示股票变化
 watch(displayStock, (newVal) => {
   if (newVal) {
@@ -403,6 +410,10 @@ async function handleAddToWatchlist(stock) {
     // 清除加载状态
     stock.addingToWatchlist = false;
   }
+}
+
+function isWatched(stock) {
+  return watchlist.value.some(item => item.code === stock.code);
 }
 // 获取股票列表
 async function fetchStockListData() {
@@ -578,37 +589,6 @@ async function loadKlineChartData() {
       ]
     };
     
-    // 如果有相似股票，添加相似股票的收盘价线图
-    if (similarStocks.value.length > 0) {
-      try {
-        // 最多显示前3个相似股票
-        const topSimilarStocks = similarStocks.value.slice(0, 3);
-        
-        for (const stock of topSimilarStocks) {
-          const similarParams = {
-            time_range: timeRange.value,
-            data_type: 'close' // 只获取收盘价
-          };
-          const similarResponse = await apiLoadKlineData(stock.code, similarParams);
-          
-          if (similarResponse && similarResponse.data && similarResponse.data.close) {
-            option.series.push({
-              name: `${stock.name} (相似度: ${(parseFloat(stock.similarity) * 100).toFixed(2)}%)`,
-              type: 'line',
-              data: similarResponse.data.close,
-              smooth: true,
-              symbolSize: 0,
-              lineStyle: {
-                width: 1.5
-              }
-            });
-          }
-        }
-      } catch (error) {
-        console.error('加载相似股票数据失败:', error);
-        ElMessage.warning('部分相似股票数据加载失败');
-      }
-    }
     
     if (klineChart) {
       klineChart.setOption(option);
@@ -872,6 +852,7 @@ const navigateWithSelectedTimelines = () => {
 onMounted(() => {
   // 假设您的图表初始化代码如下
   // 在初始化完成后保存图表实例并添加事件监听
+  fetchWatchlistData();
   nextTick(() => {
     if (klineChartRef.value) {
       // 这里是您原有的初始化图表的代码
@@ -898,7 +879,16 @@ onUnmounted(() => {
   }
 });
 
-
+async function fetchWatchlistData() {
+  try {
+    const response = await getWatchlist(String(currentUserId.value));
+    if (response && response.data) {
+      watchlist.value = response.data;
+    }
+  } catch (error) {
+    watchlist.value = [];
+  }
+}
 // 搜索股票
 function handleSearch() {
   currentPage.value = 1;
