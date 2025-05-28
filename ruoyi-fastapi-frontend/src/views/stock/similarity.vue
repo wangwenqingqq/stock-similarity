@@ -351,7 +351,7 @@ function getDefaultEndDate() {
     // return 'text-primary';
     const value = parseFloat(similarity);
     if (value >= 0.9) return 'text-success';
-    if (value >= 0.6) return 'text-warning';
+    if (value >= 0.5) return 'text-warning';
     return 'text-danger';
   }
 
