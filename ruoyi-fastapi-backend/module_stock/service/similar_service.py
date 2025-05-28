@@ -10,6 +10,7 @@ from module_stock.dao.similar_dao import SimilarDao
 from module_stock.entity.vo.similar_vo import *
 import logging
 import statsmodels.tsa.stattools as ts
+import random
 logger = logging.getLogger(__name__)
 
 
@@ -106,7 +107,6 @@ class StockSimilarityService:
             # 4. 按相似度排序并截取指定数量
             similar_stocks.sort(key=lambda x: x['similarity'], reverse=True)
             similar_stocks = similar_stocks[:request.similarCount]
-            print("similar_stocks[]", similar_stocks)
             #5. 获取性能比较数据
             performance_data = await self._get_performance_comparison(
                 base_stock_data,
@@ -228,7 +228,9 @@ class StockSimilarityService:
 
         # 根据选择的指标计算DTW距离
         if "close" in indicators:
-            distance, _ = fastdtw(stock1['close'].values, stock2['close'].values,
+            stock1_close_change = (stock1['close'] - stock1['ycp']) / stock1['ycp']
+            stock2_close_change = (stock2['close'] - stock2['ycp']) / stock2['ycp']
+            distance, _ = fastdtw(stock1_close_change.values, stock2_close_change.values,
                                   dist=lambda x, y: ((x - y) ** 2) ** 0.5)
             dtw_distances.append(distance)
 
@@ -291,7 +293,9 @@ class StockSimilarityService:
 
         # 根据选择的指标计算协整性p值
         if "close" in indicators:
-            _, p_val, _ = ts.coint(stock1['close'].values, stock2['close'].values)
+            stock1_close_change = (stock1['close'] - stock1['ycp']) / stock1['ycp']
+            stock2_close_change = (stock2['close'] - stock2['ycp']) / stock2['ycp']
+            _, p_val, _ = ts.coint(stock1_close_change.values, stock2_close_change.values)
             p_values.append(p_val)
 
         if "high" in indicators:
@@ -324,7 +328,7 @@ class StockSimilarityService:
 
         # 转换为相似度得分（p值越小，协整性越强，相似度越高）
         # 使用1-p值作为相似度，但限制在0到1之间
-        similarity = max(0, min(1, 1 - avg_p_val))
+        similarity = 1/(1+avg_p_val)
         return similarity
 
     def _calculate_pearson_similarity(
@@ -343,60 +347,51 @@ class StockSimilarityService:
         Returns:
             float: 相似度得分
         """
-        # 首先确保所有数值列都是float类型
-        numeric_cols = ['close', 'high', 'low', 'ycp', 'vol']
-        for col in numeric_cols:
-            if col in stock1.columns:
-                stock1[col] = stock1[col].astype(float)
-            if col in stock2.columns:
-                stock2[col] = stock2[col].astype(float)
-        pearson_values = []
+        try:
+            # 1. 数据预处理优化
+            if len(stock1) <= 25 or len(stock2) <= 25:
+                return 0.0
 
-        # 检查数据长度是否足够
-        if len(stock1) <= 25 or len(stock2) <= 25:
+            # 2. 一次性转换所有数值列
+            numeric_cols = ['close', 'high', 'low', 'ycp', 'vol']
+            for df in [stock1, stock2]:
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+            # 3. 预计算所有指标的变化率
+            changes = {}
+            for df, prefix in [(stock1, '1'), (stock2, '2')]:
+                changes[f'close_{prefix}'] = (df['close'] - df['ycp']) / df['ycp']
+                changes[f'high_{prefix}'] = (df['high'] - df['ycp']) / df['ycp']
+                changes[f'low_{prefix}'] = (df['low'] - df['ycp']) / df['ycp']
+                changes[f'turnover_{prefix}'] = df['vol'] / df['vol'].max()
+
+            # 4. 使用向量化操作计算相关系数
+            pearson_values = []
+            for indicator in indicators:
+                if indicator == "close":
+                    corr = np.corrcoef(changes['close_1'], changes['close_2'])[0, 1]
+                elif indicator == "high":
+                    corr = np.corrcoef(changes['high_1'], changes['high_2'])[0, 1]
+                elif indicator == "low":
+                    corr = np.corrcoef(changes['low_1'], changes['low_2'])[0, 1]
+                elif indicator == "turnover":
+                    corr = np.corrcoef(changes['turnover_1'], changes['turnover_2'])[0, 1]
+                
+                if not np.isnan(corr):
+                    pearson_values.append(corr)
+
+            # 5. 计算最终相似度
+            if not pearson_values:
+                return 0.0
+
+            avg_pearson = np.mean(pearson_values)
+            return max(0.0, avg_pearson) if avg_pearson > 0 else 0.0
+
+        except Exception as e:
+            logger.error(f"计算皮尔逊相关系数时出错: {e}")
             return 0.0
-
-        # 根据选择的指标计算皮尔逊相关系数
-        if "close" in indicators:
-            pearson = np.corrcoef(stock1['close'].values, stock2['close'].values)[0, 1]
-            pearson_values.append(pearson)
-
-        if "high" in indicators:
-            # 计算最高价涨幅
-            stock1_high_change = (stock1['high'] - stock1['ycp']) / stock1['ycp']
-            stock2_high_change = (stock2['high'] - stock2['ycp']) / stock2['ycp']
-            pearson = np.corrcoef(stock1_high_change.values, stock2_high_change.values)[0, 1]
-            pearson_values.append(pearson)
-
-        if "low" in indicators:
-            # 计算最低价涨幅
-            stock1_low_change = (stock1['low'] - stock1['ycp']) / stock1['ycp']
-            stock2_low_change = (stock2['low'] - stock2['ycp']) / stock2['ycp']
-            pearson = np.corrcoef(stock1_low_change.values, stock2_low_change.values)[0, 1]
-            pearson_values.append(pearson)
-
-        if "turnover" in indicators:
-            # 计算相对换手率
-            stock1_turnover = stock1['vol'] / stock1['vol'].max()
-            stock2_turnover = stock2['vol'] / stock2['vol'].max()
-            pearson = np.corrcoef(stock1_turnover.values, stock2_turnover.values)[0, 1]
-            pearson_values.append(pearson)
-
-        # 如果没有选择任何指标，返回0
-        if not pearson_values:
-            return 0.0
-
-        # 计算平均皮尔逊相关系数
-        avg_pearson = np.mean(pearson_values)
-
-        # 处理可能的NaN值
-        if np.isnan(avg_pearson):
-            return 0.0
-
-        # 转换为相似度得分（相关系数越接近1，相似度越高）
-        # 皮尔逊相关系数范围为[-1,1]，这里直接使用相关系数的绝对值作为相似度
-        similarity = abs(avg_pearson)
-        return similarity
 
     def _calculate_euclidean_similarity(
             self,
@@ -417,9 +412,9 @@ class StockSimilarityService:
 
         if "close" in indicators:
             # 标准化收盘价
-            stock1_close_norm = (stock1['close'] - stock1['close'].mean()) / stock1['close'].std()
-            stock2_close_norm = (stock2['close'] - stock2['close'].mean()) / stock2['close'].std()
-            dist = np.sqrt(np.sum((stock1_close_norm.values - stock2_close_norm.values) ** 2))
+            stock1_close_change = (stock1['close'] - stock1['ycp']) / stock1['ycp']
+            stock2_close_change = (stock2['close'] - stock2['ycp']) / stock2['ycp']
+            dist = np.sqrt(np.sum((stock1_close_change.values - stock2_close_change.values) ** 2))
             distances.append(dist)
 
         # 其余代码保持不变...
@@ -446,21 +441,14 @@ class StockSimilarityService:
         Returns:
             nx.Graph: NetworkX图对象
         """
-        from decimal import Decimal, getcontext
-        getcontext().prec = 10
         G = nx.Graph()
-
+        # 首先确保所有数值列都是float类型
+        numeric_cols = ['close', 'high', 'low', 'ycp', 'vol']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
         # 确保df有一个副本以避免修改原始数据
         df = df.copy()
-
-        # 将相关列转换为Decimal类型，只转换存在的列
-        cols_to_convert = []
-        for col in ['close', 'high', 'low', 'vol', 'ycp']:
-            if col in df.columns:
-                cols_to_convert.append(col)
-
-        for col in cols_to_convert:
-            df[col] = df[col].apply(lambda x: Decimal(str(x)))
 
         # 预先计算相对换手率，如果需要且有相关数据
         if "turnover" in indicators and 'vol' in df.columns:
@@ -468,7 +456,7 @@ class StockSimilarityService:
             if max_vol != 0:
                 df['relative_turnover'] = df['vol'].apply(lambda x: x / max_vol)
             else:
-                df['relative_turnover'] = df['vol'].apply(lambda x: Decimal('0'))
+                df['relative_turnover'] = df['vol'].apply(lambda x: float('0'))
 
         # 为每个交易日创建节点，只包含指定的指标特征
         for idx, row in df.iterrows():
@@ -476,16 +464,16 @@ class StockSimilarityService:
 
             # 根据指定的指标添加对应的特征，但要确保列存在
             if "close" in indicators and 'close' in df.columns:
-                node_features['close'] = row['close']
-
+                close_change = (row['close'] - row['ycp']) / row['ycp'] if row['ycp'] != 0 else float('0')
+                node_features['close_change'] = close_change
             if "high" in indicators and 'high' in df.columns and 'ycp' in df.columns:
                 # 计算最高价涨幅
-                high_change = (row['high'] - row['ycp']) / row['ycp'] if row['ycp'] != 0 else Decimal('0')
+                high_change = (row['high'] - row['ycp']) / row['ycp'] if row['ycp'] != 0 else float('0')
                 node_features['high_change'] = high_change
 
             if "low" in indicators and 'low' in df.columns and 'ycp' in df.columns:
                 # 计算最低价涨幅
-                low_change = (row['low'] - row['ycp']) / row['ycp'] if row['ycp'] != 0 else Decimal('0')
+                low_change = (row['low'] - row['ycp']) / row['ycp'] if row['ycp'] != 0 else float('0')
                 node_features['low_change'] = low_change
 
             if "turnover" in indicators and 'relative_turnover' in df.columns:
@@ -500,12 +488,12 @@ class StockSimilarityService:
             next_date = dates[i + 1]
 
             # 初始化边权重
-            edge_weight = Decimal('0')
+            edge_weight = float('0')
             edge_count = 0
 
             # 根据指定的指标计算边的权重，检查特征是否存在
-            if "close" in indicators and 'close' in G.nodes[current_date] and 'close' in G.nodes[next_date]:
-                close_diff = abs(G.nodes[next_date]['close'] - G.nodes[current_date]['close'])
+            if "close" in indicators and 'close_change' in G.nodes[current_date] and 'close_change' in G.nodes[next_date]:
+                close_diff = abs(G.nodes[next_date]['close_change'] - G.nodes[current_date]['close_change'])
                 edge_weight += close_diff
                 edge_count += 1
 
@@ -528,112 +516,169 @@ class StockSimilarityService:
 
             # 计算平均边权重，确保不同指标数量下的权重可比
             if edge_count > 0:
-                edge_weight = edge_weight / Decimal(str(edge_count))
+                edge_weight = edge_weight / float(str(edge_count))
             else:
-                edge_weight = Decimal('0')  # 如果没有共同特征，设置权重为0
+                edge_weight = float('0')  # 如果没有共同特征，设置权重为0
 
             G.add_edge(current_date, next_date, weight=edge_weight)
-
         return G
 
     def _calculate_mcs_similarity(self, G1: nx.Graph, G2: nx.Graph, indicators: List[str]) -> float:
         """
-        计算两个图之间的最大公共子图相似度
-
-        Args:
-            G1: 第一个图
-            G2: 第二个图
-            indicators: 用于计算相似度的指标列表
-
-        Returns:
-            float: 相似度得分，范围在0-1之间，1表示完全相似
+        计算两个图之间的最大公共子图相似度，添加性能限制和内存保护
         """
-        from decimal import Decimal, getcontext
-        getcontext().prec = 10
-
         # 如果任一图为空，则返回0
         if G1.number_of_nodes() == 0 or G2.number_of_nodes() == 0:
             return 0.0
 
-        try:
-            # 1. 构建产品图
-            product_graph = nx.Graph()
+        # 添加节点数量限制
+        MAX_NODES = 100  # 设置最大节点数限制
+        if G1.number_of_nodes() > MAX_NODES or G2.number_of_nodes() > MAX_NODES:
+            logger.warning(f"图节点数超过限制: G1={G1.number_of_nodes()}, G2={G2.number_of_nodes()}")
+            # 如果节点数过多，使用简化的相似度计算方法
+            return self._calculate_simplified_similarity(G1, G2, indicators)
 
-            # 2. 为每个指标分别添加节点和边
+        try:
+            # 1. 构建产品图，使用更高效的数据结构
+            product_graph = nx.Graph()
+            node_pairs = []
+
+            # 2. 预计算节点特征，减少重复计算
+            node_features = {}
             for node1 in G1.nodes():
                 for node2 in G2.nodes():
                     # 检查两个节点是否有相同的特征集
                     compatible = True
                     for indicator in indicators:
-                        if indicator == "close" and 'close' in G1.nodes[node1] and 'close' in G2.nodes[node2]:
-                            continue
-                        elif indicator == "high" and 'high_change' in G1.nodes[node1] and 'high_change' in G2.nodes[
-                            node2]:
-                            continue
-                        elif indicator == "low" and 'low_change' in G1.nodes[node1] and 'low_change' in G2.nodes[node2]:
-                            continue
-                        elif indicator == "turnover" and 'relative_turnover' in G1.nodes[
-                            node1] and 'relative_turnover' in G2.nodes[node2]:
-                            continue
-                        else:
-                            if indicator in indicators and (
-                                    (indicator == "close" and (
-                                            'close' not in G1.nodes[node1] or 'close' not in G2.nodes[node2])) or
-                                    (indicator == "high" and (
-                                            'high_change' not in G1.nodes[node1] or 'high_change' not in G2.nodes[
-                                        node2])) or
-                                    (indicator == "low" and (
-                                            'low_change' not in G1.nodes[node1] or 'low_change' not in G2.nodes[
-                                        node2])) or
-                                    (indicator == "turnover" and (
-                                            'relative_turnover' not in G1.nodes[node1] or 'relative_turnover' not in
-                                            G2.nodes[node2]))
-                            ):
-                                compatible = False
-                                break
+                        if not self._check_node_compatibility(G1.nodes[node1], G2.nodes[node2], indicator):
+                            compatible = False
+                            break
 
                     if compatible:
-                        product_graph.add_node((node1, node2))
+                        node_pairs.append((node1, node2))
 
-            # 3. 为产品图添加边
-            for (node1_a, node2_a) in product_graph.nodes():
-                for (node1_b, node2_b) in product_graph.nodes():
-                    if (node1_a != node1_b) and (node2_a != node2_b):
-                        # 检查原图中是否存在对应的边
-                        if G1.has_edge(node1_a, node1_b) and G2.has_edge(node2_a, node2_b):
-                            # 计算边权重相似度
-                            weight_sim = 1.0 - abs(G1[node1_a][node1_b]['weight'] - G2[node2_a][node2_b]['weight'])
-                            if weight_sim > 0.001:  # 只有当边权重相似度大于阈值时才添加边
-                                product_graph.add_edge((node1_a, node2_a), (node1_b, node2_b), weight=weight_sim)
+            # 3. 批量添加节点
+            for node_pair in node_pairs:
+                product_graph.add_node(node_pair)
 
-            # 4. 使用近似算法寻找最大团（对应于最大公共子图）
-            # 这里使用一个简单的贪婪算法
-            remaining_nodes = set(product_graph.nodes())
-            max_clique = []
+            # 4. 优化边添加过程
+            for i, (node1_a, node2_a) in enumerate(node_pairs):
+                for node1_b, node2_b in node_pairs[i+1:]:
+                    if self._check_edge_compatibility(G1, G2, node1_a, node2_a, node1_b, node2_b):
+                        weight_sim = self._calculate_edge_similarity(G1, G2, node1_a, node2_a, node1_b, node2_b)
+                        if weight_sim > 0.0001:
+                            product_graph.add_edge((node1_a, node2_a), (node1_b, node2_b), weight=weight_sim)
 
-            # 按度数排序节点
-            nodes_by_degree = sorted(product_graph.nodes(),
-                                     key=lambda n: product_graph.degree(n),
-                                     reverse=True)
+            # 5. 使用改进的贪婪算法寻找最大团
+            max_clique = self._find_max_clique(product_graph)
 
-            for node in nodes_by_degree:
-                if all(product_graph.has_edge(node, clique_node) for clique_node in max_clique):
-                    max_clique.append(node)
-
-            # 5. 计算相似度
+            # 6. 计算相似度
             mcs_size = len(max_clique)
             g1_size = G1.number_of_nodes()
             g2_size = G2.number_of_nodes()
 
             # 使用Tanimoto系数计算相似度
-            similarity = Decimal(str(mcs_size)) / (
-                        Decimal(str(g1_size)) + Decimal(str(g2_size)) - Decimal(str(mcs_size)))
-
+            similarity = float(mcs_size) / (float(g1_size) + float(g2_size) - float(mcs_size))
             return float(similarity)
 
         except Exception as e:
             logger.error(f"计算最大公共子图相似度时出错: {e}")
             return 0.0
+
+    def _check_node_compatibility(self, node1_features, node2_features, indicator):
+        """检查两个节点的特征是否兼容"""
+        if indicator == "close":
+            return 'close_change' in node1_features and 'close_change' in node2_features
+        elif indicator == "high":
+            return 'high_change' in node1_features and 'high_change' in node2_features
+        elif indicator == "low":
+            return 'low_change' in node1_features and 'low_change' in node2_features
+        elif indicator == "turnover":
+            return 'relative_turnover' in node1_features and 'relative_turnover' in node2_features
+        return False
+
+    def _check_edge_compatibility(self, G1, G2, node1_a, node2_a, node1_b, node2_b):
+        """检查边是否兼容"""
+        return (G1.has_edge(node1_a, node1_b) and G2.has_edge(node2_a, node2_b))
+
+    def _calculate_edge_similarity(self, G1, G2, node1_a, node2_a, node1_b, node2_b):
+        """计算边相似度"""
+        weight1 = G1[node1_a][node1_b]['weight']
+        weight2 = G2[node2_a][node2_b]['weight']
+        return 1.0 - abs(weight1 - weight2)
+
+    def _find_max_clique(self, graph):
+        """使用改进的贪婪算法寻找最大团"""
+        if not graph.nodes():
+            return []
+
+        # 按度数排序节点
+        nodes_by_degree = sorted(graph.nodes(),
+                               key=lambda n: graph.degree(n),
+                               reverse=True)
+
+        max_clique = []
+        for node in nodes_by_degree:
+            if all(graph.has_edge(node, clique_node) for clique_node in max_clique):
+                max_clique.append(node)
+
+        return max_clique
+
+    def _calculate_simplified_similarity(self, G1: nx.Graph, G2: nx.Graph, indicators: List[str]) -> float:
+        """
+        当图规模过大时使用的简化相似度计算方法
+        """
+        try:
+            # 1. 随机采样节点
+            sample_size = min(50, min(G1.number_of_nodes(), G2.number_of_nodes()))
+            G1_nodes = random.sample(list(G1.nodes()), sample_size)
+            G2_nodes = random.sample(list(G2.nodes()), sample_size)
+
+            # 2. 计算节点特征相似度
+            feature_similarities = []
+            for indicator in indicators:
+                if indicator == "close":
+                    feature_similarities.append(self._calculate_feature_similarity(G1, G2, G1_nodes, G2_nodes, 'close_change'))
+                elif indicator == "high":
+                    feature_similarities.append(self._calculate_feature_similarity(G1, G2, G1_nodes, G2_nodes, 'high_change'))
+                elif indicator == "low":
+                    feature_similarities.append(self._calculate_feature_similarity(G1, G2, G1_nodes, G2_nodes, 'low_change'))
+                elif indicator == "turnover":
+                    feature_similarities.append(self._calculate_feature_similarity(G1, G2, G1_nodes, G2_nodes, 'relative_turnover'))
+
+            # 3. 返回平均相似度
+            return sum(feature_similarities) / len(feature_similarities) if feature_similarities else 0.0
+
+        except Exception as e:
+            logger.error(f"计算简化相似度时出错: {e}")
+            return 0.0
+
+    def _calculate_feature_similarity(self, G1, G2, G1_nodes, G2_nodes, feature_name):
+        """计算特定特征的相似度"""
+        try:
+            values1 = [G1.nodes[node][feature_name] for node in G1_nodes if feature_name in G1.nodes[node]]
+            values2 = [G2.nodes[node][feature_name] for node in G2_nodes if feature_name in G2.nodes[node]]
+            
+            if not values1 or not values2:
+                return 0.0
+
+            # 计算特征值的统计相似度
+            mean1, mean2 = np.mean(values1), np.mean(values2)
+            std1, std2 = np.std(values1), np.std(values2)
+            
+            if std1 == 0 or std2 == 0:
+                return 0.0
+
+            # 使用统计特征的相似度
+            mean_sim = 1.0 / (1.0 + abs(mean1 - mean2))
+            std_sim = 1.0 / (1.0 + abs(std1 - std2))
+            
+            return (mean_sim + std_sim) / 2.0
+
+        except Exception as e:
+            logger.error(f"计算特征相似度时出错: {e}")
+            return 0.0
+
     def _calculate_graph_similarity(self, G1: nx.Graph, G2: nx.Graph, indicators: List[str]) -> float:
         """
         计算两个图之间的相似度，基于图编辑距离的价格轨迹相似度，
@@ -647,12 +692,12 @@ class StockSimilarityService:
         Returns:
             float: 相似度得分，范围在0-1之间，1表示完全相似
         """
-        from decimal import Decimal, getcontext
-        getcontext().prec = 10
+        logger.warning("==== 进入图编辑距离相似度计算 ====")
         # 获取两个图的共同节点
         common_dates = set(G1.nodes()) & set(G2.nodes())
         if not common_dates:
             return 0.0
+        logger.warning(f"共同节点数: {len(common_dates)}")
 
         # 为每个指标单独计算相似度
         similarity_scores = []
@@ -660,26 +705,24 @@ class StockSimilarityService:
         # 对于每个指标，首先检查所有共同节点是否都有该特征
         # 计算"close"指标的相似度
         if "close" in indicators:
-            close_nodes = [date for date in common_dates if 'close' in G1.nodes[date] and 'close' in G2.nodes[date]]
+            close_nodes = [date for date in common_dates if 'close_change' in G1.nodes[date] and 'close_change' in G2.nodes[date]]
             if close_nodes:
-                close_diff_total = Decimal('0')
+                close_diff_total = float('0')
                 for date in close_nodes:
                     node1 = G1.nodes[date]
                     node2 = G2.nodes[date]
                     # 计算收盘价差异
-                    close_diff = abs(node1['close'] - node2['close'])
-                    # 归一化
-                    max_close = max(abs(node1['close']), abs(node2['close']))
-                    if max_close > 0:
-                        close_diff /= max_close
+                    close_diff = abs(node1['close_change'] - node2['close_change'])
+
                     close_diff_total += close_diff
 
                 # 计算平均差异并转换为相似度分数
                 if len(close_nodes) > 0:
-                    avg_close_diff = close_diff_total / Decimal(str(len(close_nodes)))
-                    close_similarity = Decimal('1') - avg_close_diff
+                    avg_close_diff = close_diff_total / float(len(close_nodes))
+                    close_similarity = 1.0 / (1.0 + avg_close_diff)  # 距离越大相似度越小，但不会直接为0
+                    logger.warning(f"close指标: 平均差异={avg_close_diff}, 相似度={close_similarity}")
                     # 确保结果在0-1之间
-                    close_similarity = max(min(close_similarity, Decimal('1')), Decimal('0'))
+                    close_similarity = max(min(close_similarity, float('1')), float('0'))
                     similarity_scores.append(close_similarity)
 
         # 计算"high"指标的相似度
@@ -687,7 +730,7 @@ class StockSimilarityService:
             high_nodes = [date for date in common_dates if
                           'high_change' in G1.nodes[date] and 'high_change' in G2.nodes[date]]
             if high_nodes:
-                high_diff_total = Decimal('0')
+                high_diff_total = float('0')
                 for date in high_nodes:
                     node1 = G1.nodes[date]
                     node2 = G2.nodes[date]
@@ -697,10 +740,11 @@ class StockSimilarityService:
 
                 # 计算平均差异并转换为相似度分数
                 if len(high_nodes) > 0:
-                    avg_high_diff = high_diff_total / Decimal(str(len(high_nodes)))
-                    high_similarity = Decimal('1') / (Decimal('1') + avg_high_diff)  # 使用倒数转换为相似度
+                    avg_high_diff = high_diff_total / float(str(len(high_nodes)))
+                    high_similarity = float('1') / (float('1') + avg_high_diff)  # 使用倒数转换为相似度
+                    logger.warning(f"high指标: 平均差异={avg_high_diff}, 相似度={high_similarity}")
                     # 确保结果在0-1之间
-                    high_similarity = max(min(high_similarity, Decimal('1')), Decimal('0'))
+                    high_similarity = max(min(high_similarity, float('1')), float('0'))
                     similarity_scores.append(high_similarity)
 
         # 计算"low"指标的相似度
@@ -708,7 +752,7 @@ class StockSimilarityService:
             low_nodes = [date for date in common_dates if
                          'low_change' in G1.nodes[date] and 'low_change' in G2.nodes[date]]
             if low_nodes:
-                low_diff_total = Decimal('0')
+                low_diff_total = float('0')
                 for date in low_nodes:
                     node1 = G1.nodes[date]
                     node2 = G2.nodes[date]
@@ -718,10 +762,11 @@ class StockSimilarityService:
 
                 # 计算平均差异并转换为相似度分数
                 if len(low_nodes) > 0:
-                    avg_low_diff = low_diff_total / Decimal(str(len(low_nodes)))
-                    low_similarity = Decimal('1') / (Decimal('1') + avg_low_diff)  # 使用倒数转换为相似度
+                    avg_low_diff = low_diff_total / float(str(len(low_nodes)))
+                    low_similarity = float('1') / (float('1') + avg_low_diff)  # 使用倒数转换为相似度
+                    logger.warning(f"low指标: 平均差异={avg_low_diff}, 相似度={low_similarity}")
                     # 确保结果在0-1之间
-                    low_similarity = max(min(low_similarity, Decimal('1')), Decimal('0'))
+                    low_similarity = max(min(low_similarity, float('1')), float('0'))
                     similarity_scores.append(low_similarity)
 
         # 计算"turnover"指标的相似度
@@ -729,7 +774,7 @@ class StockSimilarityService:
             turnover_nodes = [date for date in common_dates if
                               'relative_turnover' in G1.nodes[date] and 'relative_turnover' in G2.nodes[date]]
             if turnover_nodes:
-                turnover_diff_total = Decimal('0')
+                turnover_diff_total = float('0')
                 for date in turnover_nodes:
                     node1 = G1.nodes[date]
                     node2 = G2.nodes[date]
@@ -739,10 +784,11 @@ class StockSimilarityService:
 
                 # 计算平均差异并转换为相似度分数
                 if len(turnover_nodes) > 0:
-                    avg_turnover_diff = turnover_diff_total / Decimal(str(len(turnover_nodes)))
-                    turnover_similarity = Decimal('1') - avg_turnover_diff  # 直接转换为相似度
+                    avg_turnover_diff = turnover_diff_total / float(str(len(turnover_nodes)))
+                    turnover_similarity = float('1') - avg_turnover_diff  # 直接转换为相似度
+                    logger.warning(f"turnover指标: 平均差异={avg_turnover_diff}, 相似度={turnover_similarity}")
                     # 确保结果在0-1之间
-                    turnover_similarity = max(min(turnover_similarity, Decimal('1')), Decimal('0'))
+                    turnover_similarity = max(min(turnover_similarity, float('1')), float('0'))
                     similarity_scores.append(turnover_similarity)
 
         # 计算边相似度，仅当有共同边时
@@ -754,20 +800,21 @@ class StockSimilarityService:
 
             # 找到共同的边
             common_edges = set(G1_edges) & set(G2_edges)
+            logger.warning(f"共同边数: {len(common_edges)}")
         except Exception as e:
             logger.warning(f"计算边相似度时出错: {e}")
 
         # 只有当存在共同边时才计算边相似度
         if common_edges:
-            edge_diff_total = Decimal('0')
+            edge_diff_total = float('0')
             edge_count = 0
 
             for edge in common_edges:
                 try:
                     # 确保边存在于两个图中
                     if G1.has_edge(*edge) and G2.has_edge(*edge):
-                        weight1 = G1.get_edge_data(*edge).get('weight', Decimal('0'))
-                        weight2 = G2.get_edge_data(*edge).get('weight', Decimal('0'))
+                        weight1 = G1.get_edge_data(*edge).get('weight', float('0'))
+                        weight2 = G2.get_edge_data(*edge).get('weight', float('0'))
                         edge_diff = abs(weight1 - weight2)
                         edge_diff_total += edge_diff
                         edge_count += 1
@@ -776,10 +823,11 @@ class StockSimilarityService:
                     continue
 
             if edge_count > 0:
-                avg_edge_diff = edge_diff_total / Decimal(str(edge_count))
-                edge_similarity = Decimal('1') - avg_edge_diff
+                avg_edge_diff = edge_diff_total / float(edge_count)
+                edge_similarity = 1.0 / (1.0 + avg_edge_diff)  # 距离越大相似度越小，但不会直接为0
+                logger.warning(f"边相似度: 平均差异={avg_edge_diff}, 相似度={edge_similarity}")
                 # 确保结果在0-1之间
-                edge_similarity = max(min(edge_similarity, Decimal('1')), Decimal('0'))
+                edge_similarity = max(min(edge_similarity, float('1')), float('0'))
                 similarity_scores.append(edge_similarity)
 
         # 如果没有任何相似度分数，返回0
@@ -787,11 +835,13 @@ class StockSimilarityService:
             return 0.0
 
         # 计算所有相似度分数的平均值作为最终相似度
-        final_similarity = sum(similarity_scores) / Decimal(str(len(similarity_scores)))
+        final_similarity = sum(similarity_scores) / float(len(similarity_scores))
 
         # 确保结果在0-1之间并返回
-        final_similarity = max(min(final_similarity, Decimal('1')), Decimal('0'))
-        return float(final_similarity)  # 将Decimal转换为float返回
+        final_similarity = max(min(final_similarity, float('1')), float('0'))
+        logger.warning(f"所有分数: {similarity_scores}")
+        logger.warning(f"最终相似度: {final_similarity}")
+        return float(final_similarity)  # 将float转换为float返回
 
     async def _get_performance_comparison(
             self,
