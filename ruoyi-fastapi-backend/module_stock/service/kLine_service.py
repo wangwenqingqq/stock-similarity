@@ -1,10 +1,12 @@
+import json
 import logging
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-
+from fastapi import APIRouter, Depends, Request, Query
+from config.enums import RedisInitKeyConfig
 from entity.vo.kLine_vo import StockListResponse, KlineDataResponse, SimilarStockResponse
 from dao.kLine_dao import KLineDAO
 
@@ -69,12 +71,13 @@ class KLineService:
             logger.error(f"获取股票列表出错: {e}")
             raise
 
-    async def get_kline_data(self, stock_code: str, time_range: str = 'day',
+    async def get_kline_data(self, request,stock_code: str, time_range: str = 'day',
                              data_type: Optional[str] = None) -> KlineDataResponse:
         """
         获取K线图数据
 
         Args:
+            request: 前端请求
             stock_code: 股票代码
             time_range: 时间范围，可选 'day', 'week', 'month'
             data_type: 数据类型，若为'close'则只返回收盘价数据
@@ -83,12 +86,29 @@ class KLineService:
             KlineDataResponse: K线图数据响应
         """
         try:
-            # 调用DAO层获取K线图数据
-            kline_data = await KLineDAO.load_kline_data(
-                stock_code=stock_code,
-                time_range=time_range,
-                data_type=data_type
-            )
+              # 构建Redis键名
+            redis_key = f"{RedisInitKeyConfig.STOCK_KLINE.key}:{stock_code}:{time_range}"
+            
+            # 尝试从Redis获取数据
+            cached_data = await request.app.state.redis.get(redis_key)
+            
+            if cached_data:
+                # 如果Redis中有数据，直接返回
+                kline_data = json.loads(cached_data)
+            else:
+                # 如果Redis中没有数据，从数据库获取
+                kline_data = await KLineDAO.load_kline_data(
+                    stock_code=stock_code,
+                    time_range=time_range,
+                    data_type=data_type
+                )
+                
+                # 将数据存入Redis，设置过期时间（例如1小时）
+                await request.app.state.redis.set(
+                    redis_key,
+                    json.dumps(kline_data),
+                    ex=3600  # 1小时过期
+                )
 
             # 获取股票基本信息
             stock_info = await self._get_stock_info(stock_code)
@@ -99,7 +119,7 @@ class KLineService:
                 values=kline_data.get('values', []),
                 ma5=kline_data.get('ma5', []),
                 ma10=kline_data.get('ma10', []),
-                ma20=kline_data.get('ma20', []),
+                ma30=kline_data.get('ma30', []),
                 volumes=kline_data.get('volumes', []),
                 stockName=stock_info.get('name', ''),
                 stockCode=stock_code
@@ -293,3 +313,26 @@ class KLineService:
             'dates': data['date'],
             'returns': data['cumulative_return']
         }
+# async def update_kline_cache(self, request: Request, stock_code: str, time_range: str):
+#     """
+#     更新K线数据缓存
+#     """
+#     try:
+#         # 从数据库获取最新数据
+#         kline_data = await KLineDAO.load_kline_data(
+#             stock_code=stock_code,
+#             time_range=time_range
+#         )
+#
+#         # 更新Redis缓存
+#         redis_key = f"{RedisInitKeyConfig.STOCK_KLINE.key}:{stock_code}:{time_range}"
+#         await request.app.state.redis.set(
+#             redis_key,
+#             json.dumps(kline_data),
+#             ex=3600  # 1小时过期
+#         )
+#
+#         return True
+#     except Exception as e:
+#         logger.error(f"更新K线数据缓存出错: {e}")
+#         return False
