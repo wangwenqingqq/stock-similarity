@@ -9,8 +9,8 @@ CK_HOST = ClickHouseConfig.ck_host
 CK_PORT = ClickHouseConfig.ck_port
 CK_USER_NAME = ClickHouseConfig.ck_username
 CK_PASSWORD = ClickHouseConfig.ck_password  # 添加密码配置
-CK_CONNECT_TIMEOUT = 60      # 修改为60秒
-CK_SEND_RECEIVE_TIMEOUT = 60 # 修改为60秒
+CK_CONNECT_TIMEOUT = 30     
+CK_SEND_RECEIVE_TIMEOUT = 30 
 CK_COMPRESSION = ClickHouseConfig.ck_compression
 
 # SSH 跳板机配置
