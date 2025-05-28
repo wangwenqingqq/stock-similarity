@@ -376,9 +376,10 @@ async function handleAddToWatchlist(stock) {
     // 准备请求数据，注意参数命名
     const requestData = {
       stock_code: stock.code,  // 确保使用stock_code而非stockCode
-      user_id: String(currentUserId.value) , // 使用正确的参数命名并转换为字符串
+      user_id: String(currentUserId.value), // 使用正确的参数命名并转换为字符串
       status: 1
     };
+    
     // 调用API
     const response = await addToWatchlist(requestData);
     
@@ -404,8 +405,14 @@ async function handleAddToWatchlist(stock) {
     }
   } catch (error) {
     // 处理异常
-    ElMessage.error('添加关注失败: ' + (error.message || '未知错误'));
-    console.error('添加关注失败:', error);
+    if (error.message.includes('超时')) {
+      ElMessage.warning('请求超时，正在重试...');
+      // 可以在这里添加重试逻辑
+      setTimeout(() => handleAddToWatchlist(stock), 2000);
+    } else {
+      ElMessage.error('添加关注失败: ' + (error.message || '未知错误'));
+      console.error('添加关注失败:', error);
+    }
   } finally {
     // 清除加载状态
     stock.addingToWatchlist = false;
@@ -535,7 +542,7 @@ async function loadKlineChartData() {
       throw new Error('K线数据响应为空');
     }
     
-    // console.log('K线数据响应:', response);
+    console.log('K线数据响应:', response);
     const klineData = response.data;
     
     // 更新图表选项
@@ -578,9 +585,9 @@ async function loadKlineChartData() {
           }
         },
         {
-          name: 'MA20',
+          name: 'M30',
           type: 'line',
-          data: klineData.ma20 || [],
+          data: klineData.ma30 || [],
           smooth: true,
           lineStyle: {
             opacity: 0.8
