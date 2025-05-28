@@ -211,14 +211,14 @@
               <div class="value">{{ formatVolume(displayStock.volume) }}</div>
             </div>
           </el-col>
-          <el-col :span="4">
+          <!-- <el-col :span="4">
             <div class="detail-item">
-              <!-- <div class="label">7日收益率</div> -->
+              <div class="label">7日收益率</div>
               <div class="value" :class="(displayStock.seven_day_return || 0) >= 0 ? 'up-text' : 'down-text'">
                 {{ getSafePercentage(displayStock, 'seven_day_return') }}
               </div>
             </div>
-          </el-col>
+          </el-col> -->
           <el-col :span="4">
             <div class="detail-item">
               <div class="label">关注天数</div>
@@ -252,7 +252,7 @@ const currentUserId = computed(() => userStore.id);
 const watchlist = ref([]);
 const selectedStock = ref(null);
 const timeRange = ref('day');
-const sortField = ref('change_rate');
+const sortField = ref('add_time');
 const sortOrder = ref('desc');
 const chartLoading = ref(false);
 const tableLoading = ref(false);
@@ -299,10 +299,6 @@ const sortedWatchlist = computed(() => {
       case 'change_rate':
         aValue = parseFloat(a.change_rate) || 0;
         bValue = parseFloat(b.change_rate) || 0;
-        break;
-      case 'seven_day_return':
-        aValue = parseFloat(a.seven_day_return) || 0;
-        bValue = parseFloat(b.seven_day_return) || 0;
         break;
       case 'add_time':
         aValue = new Date().getTime();
