@@ -19,7 +19,7 @@ klineController = APIRouter(
 
 @klineController.get(
     '/list',
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:kline:list'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:kline'))]
 )
 @Log(title='股票列表查询', business_type=BusinessType.OTHER)
 async def fetch_stock_list(
@@ -72,7 +72,7 @@ async def fetch_stock_list(
 
 @klineController.get(
     '/kline/{stock_code}',
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:kline:data'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:kline'))]
 )
 @Log(title='K线图数据查询', business_type=BusinessType.OTHER)
 async def load_kline_data(
@@ -101,11 +101,11 @@ async def load_kline_data(
 
         # 调用服务层方法获取K线图数据
         response = await kline_service.get_kline_data(
+            request=request,  # 传入request对象以访问Redis
             stock_code=stock_code,
             time_range=time_range,
             data_type=data_type
         )
-        print("response in controller",response)
         logger.info(f'获取股票 {stock_code} K线图数据成功')
         return ResponseUtil.success(msg='获取K线图数据成功', data=response)
 
@@ -116,7 +116,7 @@ async def load_kline_data(
 
 @klineController.get(
     '/similar/{stock_code}',
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:kline:similar'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:kline'))]
 )
 @Log(title='相似股票查询', business_type=BusinessType.OTHER)
 async def find_similar_stocks(

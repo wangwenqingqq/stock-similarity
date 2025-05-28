@@ -21,7 +21,7 @@ followController = APIRouter(
 @followController.get(
     '/list',
     response_model=StockListResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:list:query'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='获取股票列表', business_type=BusinessType.OTHER)
 async def get_stock_list(
@@ -63,7 +63,7 @@ async def get_stock_list(
 @followController.get(
     '/search',
     response_model=StockSearchResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:search:query'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='搜索股票', business_type=BusinessType.OTHER)
 async def search_stocks(
@@ -99,7 +99,7 @@ async def search_stocks(
 @followController.get(
     '/watchlist',
     response_model=StockWatchlistResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:watchlist:query'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='获取用户关注的股票列表', business_type=BusinessType.OTHER)
 async def get_user_watchlist(
@@ -135,7 +135,7 @@ async def get_user_watchlist(
 @followController.post(
     '/watchlist',
     response_model=StockWatchlistAddResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:watchlist:add'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='添加股票到关注列表', business_type=BusinessType.INSERT)
 async def add_to_watchlist(
@@ -179,7 +179,7 @@ async def add_to_watchlist(
 @followController.delete(
     '/watchlist/{stock_code}',
     response_model=StockWatchlistRemoveResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:watchlist:remove'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='从关注列表中移除股票', business_type=BusinessType.DELETE)
 async def remove_from_watchlist(
@@ -229,7 +229,7 @@ async def remove_from_watchlist(
 @followController.delete(
     '/watchlist',
     response_model=StockWatchlistClearResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:watchlist:clear'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='清空关注列表', business_type=BusinessType.CLEAN)
 async def clear_watchlist(
@@ -276,7 +276,7 @@ async def clear_watchlist(
 @followController.get(
     '/market/overview',
     response_model=StockMarketOverviewResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:market:overview'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:watchlist'))]
 )
 @Log(title='获取市场概览', business_type=BusinessType.OTHER)
 async def get_market_overview(

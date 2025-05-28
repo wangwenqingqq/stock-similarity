@@ -21,7 +21,7 @@ similarController = APIRouter(
 @similarController.post(
     '/calculate',
     response_model=StockSimilarityResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('stock:similarity:calculate'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:calculate'))]
 )
 @Log(title='股票相似性计算', business_type=BusinessType.OTHER)
 async def calculate_stock_similarity(
@@ -58,7 +58,7 @@ async def calculate_stock_similarity(
 @similarController.get(
     '/fuzzySearch',
     response_model=List[StockBase],
-    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:list'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:calculate'))]
 )
 @Log(title='搜索查询历史', business_type=BusinessType.OTHER)
 async def search_query_history(

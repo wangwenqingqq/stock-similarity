@@ -18,7 +18,7 @@ historyController = APIRouter(
 )
 @historyController.post(
     '',
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:add'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='新增查询历史', business_type=BusinessType.INSERT)
 async def create_query_history(
@@ -55,7 +55,7 @@ async def create_query_history(
 @historyController.get(
     '',
     response_model=QueryHistoryListResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:list'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='查询历史列表', business_type=BusinessType.OTHER)
 async def get_query_history_list(
@@ -103,7 +103,7 @@ async def get_query_history_list(
 @historyController.get(
     '/fuzzySearch',
     response_model=QueryHistorySearchResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:list'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='搜索查询历史', business_type=BusinessType.OTHER)
 async def search_query_history(
@@ -138,7 +138,7 @@ async def search_query_history(
 
 @historyController.delete(
     '/{history_id}',
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:remove'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='删除查询历史', business_type=BusinessType.DELETE)
 async def delete_query_history(
@@ -174,7 +174,7 @@ async def delete_query_history(
 
 @historyController.delete(
     '/batch',
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:remove'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='批量删除查询历史', business_type=BusinessType.DELETE)
 async def delete_query_history_batch(
@@ -213,7 +213,7 @@ async def delete_query_history_batch(
 @historyController.get(
     '/result/{history_id}',
     response_model=SimilarStocksDetailResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:query'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='相似股票详情', business_type=BusinessType.OTHER)
 async def get_similar_stocks_detail(
@@ -249,7 +249,7 @@ async def get_similar_stocks_detail(
 
 @historyController.post(
     '/export',
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:export'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='导出查询历史', business_type=BusinessType.EXPORT)
 async def export_query_history(
@@ -286,7 +286,7 @@ async def export_query_history(
 @historyController.get(
     '/statistics',
     response_model=QueryHistoryStatisticsResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:query'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='查询历史统计', business_type=BusinessType.OTHER)
 async def get_query_history_statistics(
@@ -331,7 +331,7 @@ async def get_query_history_statistics(
 @historyController.get(
     '/recent',
     response_model=RecentQueryHistoryResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:list'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='最近查询记录', business_type=BusinessType.OTHER)
 async def get_recent_query_history(
@@ -367,7 +367,7 @@ async def get_recent_query_history(
 
 @historyController.delete(
     '/clear',
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:clear'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='清空查询历史', business_type=BusinessType.DELETE)
 async def clear_all_query_history(
@@ -401,7 +401,7 @@ async def clear_all_query_history(
 @historyController.get(
     '/{history_id}',
     response_model=QueryHistoryDetailResponse,
-    dependencies=[Depends(CheckUserInterfaceAuth('system:history:query'))]
+    dependencies=[Depends(CheckUserInterfaceAuth('system:similarity:history'))]
 )
 @Log(title='查询历史详情', business_type=BusinessType.OTHER)
 async def get_query_history_detail(
