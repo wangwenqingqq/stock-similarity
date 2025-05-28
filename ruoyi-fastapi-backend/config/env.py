@@ -35,22 +35,32 @@ class JwtSettings(BaseSettings):
     jwt_redis_expire_minutes: int = 30
 
 
+class SSHConfig(BaseSettings):
+    """
+    SSH跳板机配置
+    """
+    ssh_host: str = 'isrc.iscas.ac.cn'
+    ssh_port: int = 5022
+    ssh_username: str = 'xuran'
+    ssh_key_path: str = r'C:\Users\isrc\.ssh\id_rsa'
+
+
 class DataBaseSettings(BaseSettings):
     """
     数据库配置
     """
 
     db_type: Literal['mysql', 'postgresql'] = 'mysql'
-    db_host: str = '127.0.0.1'
+    db_host: str = '10.20.173.3'  # 修改为实际数据库服务器地址
     db_port: int = 3306
     db_username: str = 'root'
     db_password: str = 'mysqlroot'
     db_database: str = 'ruoyi-fastapi'
     db_echo: bool = True
-    db_max_overflow: int = 10
-    db_pool_size: int = 50
-    db_pool_recycle: int = 3600
-    db_pool_timeout: int = 30
+    db_max_overflow: int = 20
+    db_pool_size: int = 20
+    db_pool_recycle: int = 3600  # 修改为1小时
+    db_pool_timeout: int = 120   # 修改为2分钟
 
     @computed_field
     @property
@@ -78,7 +88,7 @@ class RedisSettings(BaseSettings):
     Redis配置
     """
 
-    redis_host: str = '127.0.0.1'
+    redis_host: str = '10.20.173.3'  # 修改为实际Redis服务器地址
     redis_port: int = 6379
     redis_username: str = ''
     redis_password: str = ''
@@ -183,6 +193,13 @@ class GetConfig:
         return JwtSettings()
 
     @lru_cache()
+    def get_ssh_config(self):
+        """
+        获取SSH跳板机配置
+        """
+        return SSHConfig()
+
+    @lru_cache()
     def get_database_config(self):
         """
         获取数据库配置
@@ -253,6 +270,8 @@ get_config = GetConfig()
 AppConfig = get_config.get_app_config()
 # Jwt配置
 JwtConfig = get_config.get_jwt_config()
+# SSH配置
+SSHConfig = get_config.get_ssh_config()
 # 数据库配置
 DataBaseConfig = get_config.get_database_config()
 # Redis配置
