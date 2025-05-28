@@ -58,17 +58,17 @@
                 <label>时间长度：</label>
                 <span>{{ getDuration(query.start_date, query.end_date) }}</span>
               </div>
-              <div class="detail-item">
+              <div class="detail-item" v-if="shouldShowIndicators(query.method)">
                 <label>选择指标：</label>
-                <span>{{ query.indicators.join(', ') }}</span>
+                <span>{{ formatIndicators(query.indicators) }}</span>
               </div>
               <div class="detail-item">
                 <label>计算方法：</label>
-                <span>{{ query.method }}</span>
+                <span>{{ formatMethod(query.method) }}</span>
               </div>
               <div class="detail-item">
                 <label>对比范围：</label>
-                <span>{{ query.compare_scope }}</span>
+                <span>{{ formatCompareScope(query.compare_scope) }}</span>
               </div>
               <div class="detail-item">
                 <label>相似个数：</label>
@@ -105,6 +105,17 @@
     <div v-if="filteredQueryHistory.length === 0" class="empty-state">
       {{ searchKeyword ? '没有找到匹配的查询记录' : '暂无查询历史记录' }}
     </div>
+    <div class="pagination-container">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
   </div>
 </template>
 
@@ -123,17 +134,22 @@ const userStore = useUserStore();
 // 获取用户ID
 const currentUserId = computed(() => userStore.id);
 // 获取查询历史
+const currentPage = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
 const fetchHistory = async () => {
   try {
     const params = {
       user_id: currentUserId.value,
-      page: 1,
-      page_size: 10,
+      page: currentPage.value,
+      page_size: pageSize.value,
       sort_by: 'query_time',
       sort_order: 'desc'
     }
     const response = await getQueryHistoryList(params)
     queryHistory.value = response.data.items
+    total.value = response.data.total
   } catch (error) {
     console.error('获取历史记录失败', error)
   }
@@ -218,6 +234,55 @@ function getDuration(start, end) {
   // 计算天数差（包含起止日+1）
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1
   return `${diffDays}天`
+}
+
+// 新增：指标转换函数
+const indicatorMap = {
+  close: '收盘价涨跌幅',
+  high: '最高价涨跌幅',
+  low: '最低价涨跌幅',
+  turnover: '换手率',
+}
+function formatIndicators(indicators) {
+  if (!Array.isArray(indicators)) return ''
+  return indicators.map(i => indicatorMap[i] || i).join(', ')
+}
+
+// 新增：方法转换函数
+const methodMap = {
+  maxCommonSubgraph: '最大公共子图',
+  graphEditing: '图编辑距离',
+  dtw: '动态规整算法',
+  pearson: '皮尔森相关系数',
+  euclidean: '欧式距离',
+  coIntegration: '协整性算法',
+  shape: '形状相似性',
+  position: '位置相似性',
+}
+function formatMethod(method) {
+  return methodMap[method] || method
+}
+function shouldShowIndicators(method) {
+  return method !== 'shape' && method !== 'position'
+}
+
+// 新增：对比范围转换函数
+function formatCompareScope(scope) {
+  if (scope === '1') return '中证三级行业'
+  if (scope === '0') return '证监会一级行业'
+  return scope
+}
+
+// 新增分页改变处理函数
+const handlePageChange = (page) => {
+  currentPage.value = page
+  fetchHistory()
+}
+
+const handleSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+  fetchHistory()
 }
 
 // 组件挂载时可以从API获取真实数据
@@ -465,5 +530,11 @@ onMounted(() => {
   .result-table td {
     padding: 8px;
   }
+}
+
+.pagination-container {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
 }
 </style>
