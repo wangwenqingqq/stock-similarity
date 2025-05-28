@@ -74,12 +74,16 @@ export function addToWatchlist(data) {
   return request({
     url: '/system/show/watchlist',
     method: 'post',
-    data 
+    data,
+    timeout: 30000 // 增加超时时间到30秒
   }).then(res => {
     console.log('添加关注股票API响应:', res);
     return res;
   }).catch(err => {
     console.error('添加关注股票API请求失败:', err);
+    if (err.code === 'ECONNABORTED') {
+      throw new Error('请求超时，请稍后重试');
+    }
     throw err;
   });
 }

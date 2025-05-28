@@ -7,7 +7,7 @@ export function calculateStockSimilarity(data) {
     url: '/system/stockSimilarity/calculate',
     method: 'post',
     data: data,
-    timeout: 60000 // 设置超时时间为1分钟
+    timeout: 180000 // 设置超时时间为6分钟
   }).then(res => {
     console.log('相似性计算API响应:', res);
     return res;
