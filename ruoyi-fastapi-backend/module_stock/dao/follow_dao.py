@@ -312,19 +312,9 @@ class FollowDAO:
             LIMIT 1
             """
 
-            # 创建一个新的临时连接而不是使用全局连接
-            temp_client = clickhouse_connect.get_client(
-                host=ClickHouseConfig.ck_host,
-                port=ClickHouseConfig.ck_port,
-                username=ClickHouseConfig.ck_username,
-                password=ClickHouseConfig.ck_password
-            )
-
-            try:
-                result = temp_client.query(query)
-                return len(result.result_rows) > 0
-            finally:
-                temp_client.close()  # 确保关闭连接
+            # 使用 ck_util 中的连接池
+            result = ck_util.query(query)
+            return len(result.result_rows) > 0
 
         except Exception as e:
             logger.error(f"检查股票是否存在出错: {e}")
