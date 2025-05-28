@@ -293,7 +293,7 @@ class KLineDAO:
             'values': [],
             'ma5': [],
             'ma10': [],
-            'ma20': [],
+            'ma30': [],
             'volumes': []
         }
 
@@ -379,10 +379,10 @@ class KLineDAO:
                 float(row['high']) if not pd.isna(row['high']) else None
             ], axis=1).tolist()
 
-            # 计算MA5, MA10, MA20均线
+            # 计算MA5, MA10, MA30均线
             df['ma5'] = df['close'].rolling(window=5).mean().fillna(0)
             df['ma10'] = df['close'].rolling(window=10).mean().fillna(0)
-            df['ma20'] = df['close'].rolling(window=20).mean().fillna(0)
+            df['ma30'] = df['close'].rolling(window=30).mean().fillna(0)
 
             # 更安全的浮点数列表转换函数
             def safe_float_list(series):
@@ -403,7 +403,7 @@ class KLineDAO:
                 'values': values,
                 'ma5': safe_float_list(df['ma5']),
                 'ma10': safe_float_list(df['ma10']),
-                'ma20': safe_float_list(df['ma20']),
+                'ma30': safe_float_list(df['ma30']),
                 'volumes': safe_float_list(df['vol'])
             }
 

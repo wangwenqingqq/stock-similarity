@@ -51,7 +51,7 @@ class KlineDataResponse(BaseModel):
     close: Optional[List[float]] = Field(None, description="收盘价数据，仅用于相似股票对比")
     ma5: List[float] = Field(..., description="MA5均线数据")
     ma10: List[float] = Field(..., description="MA10均线数据")
-    ma20: List[float] = Field(..., description="MA20均线数据")
+    ma30: List[float] = Field(..., description="MA30均线数据")
     volumes: Optional[List[float]] = Field(None, description="成交量数据")
     stockName: str  # 股票名称
     stockCode: str  # 股票代码
