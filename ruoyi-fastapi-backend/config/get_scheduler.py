@@ -14,13 +14,15 @@ from datetime import datetime, timedelta
 from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import sessionmaker
 from typing import Union
-from config.database import AsyncSessionLocal, quote_plus
-from config.env import DataBaseConfig, RedisConfig
+from config.database import AsyncSessionLocal, quote_plus, tunnel as db_tunnel
+from config.env import DataBaseConfig, RedisConfig, SSHConfig
 from module_admin.dao.job_dao import JobDao
 from module_admin.entity.vo.job_vo import JobLogModel, JobModel
 from module_admin.service.job_log_service import JobLogService
 from utils.log_util import logger
 import module_task  # noqa: F401
+import sshtunnel
+import atexit
 
 
 # 重写Cron定时
@@ -82,15 +84,41 @@ class MyCronTrigger(CronTrigger):
                     diff += 1
 
 
+# 创建Redis的SSH隧道
+def create_redis_tunnel():
+    """创建 Redis 的 SSH 隧道"""
+    try:
+        tunnel = sshtunnel.SSHTunnelForwarder(
+            (SSHConfig.ssh_host, SSHConfig.ssh_port),
+            ssh_username=SSHConfig.ssh_username,
+            ssh_pkey=SSHConfig.ssh_key_path,
+            remote_bind_address=(RedisConfig.redis_host, RedisConfig.redis_port),
+            local_bind_address=('127.0.0.1', 0)  # 随机本地端口
+        )
+        tunnel.start()
+        return tunnel
+    except Exception as e:
+        logger.error(f"Redis SSH 隧道创建失败: {str(e)}")
+        logger.error(f"使用的 SSH 密钥路径: {SSHConfig.ssh_key_path}")
+        logger.error(f"目标地址: {RedisConfig.redis_host}:{RedisConfig.redis_port}")
+        logger.error(f"跳板机地址: {SSHConfig.ssh_host}:{SSHConfig.ssh_port}")
+        raise
+
+# 创建Redis的SSH隧道
+redis_tunnel = create_redis_tunnel()
+redis_local_port = redis_tunnel.local_bind_port
+
+# 使用本地端口创建数据库URL
 SQLALCHEMY_DATABASE_URL = (
     f'mysql+pymysql://{DataBaseConfig.db_username}:{quote_plus(DataBaseConfig.db_password)}@'
-    f'{DataBaseConfig.db_host}:{DataBaseConfig.db_port}/{DataBaseConfig.db_database}'
+    f'127.0.0.1:{db_tunnel.local_bind_port}/{DataBaseConfig.db_database}'
 )
 if DataBaseConfig.db_type == 'postgresql':
     SQLALCHEMY_DATABASE_URL = (
         f'postgresql+psycopg2://{DataBaseConfig.db_username}:{quote_plus(DataBaseConfig.db_password)}@'
-        f'{DataBaseConfig.db_host}:{DataBaseConfig.db_port}/{DataBaseConfig.db_database}'
+        f'127.0.0.1:{db_tunnel.local_bind_port}/{DataBaseConfig.db_database}'
     )
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     echo=DataBaseConfig.db_echo,
@@ -105,8 +133,8 @@ job_stores = {
     'sqlalchemy': SQLAlchemyJobStore(url=SQLALCHEMY_DATABASE_URL, engine=engine),
     'redis': RedisJobStore(
         **dict(
-            host=RedisConfig.redis_host,
-            port=RedisConfig.redis_port,
+            host='127.0.0.1',
+            port=redis_local_port,
             username=RedisConfig.redis_username,
             password=RedisConfig.redis_password,
             db=RedisConfig.redis_database,
@@ -277,3 +305,6 @@ class SchedulerUtil:
                 session = SessionLocal()
                 JobLogService.add_job_log_services(session, job_log)
                 session.close()
+
+# 在程序退出时关闭Redis隧道
+atexit.register(redis_tunnel.close)
