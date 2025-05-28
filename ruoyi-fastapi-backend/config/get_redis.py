@@ -1,10 +1,12 @@
 from redis import asyncio as aioredis
 from redis.exceptions import AuthenticationError, TimeoutError, RedisError
 from config.database import AsyncSessionLocal
-from config.env import RedisConfig
+from config.env import RedisConfig, SSHConfig
 from module_admin.service.config_service import ConfigService
 from module_admin.service.dict_service import DictDataService
 from utils.log_util import logger
+import sshtunnel
+import atexit
 
 
 class RedisUtil:
@@ -20,28 +22,53 @@ class RedisUtil:
         :return: Redis连接对象
         """
         logger.info('开始连接redis...')
-        redis = await aioredis.from_url(
-            url=f'redis://{RedisConfig.redis_host}',
-            port=RedisConfig.redis_port,
-            username=RedisConfig.redis_username,
-            password=RedisConfig.redis_password,
-            db=RedisConfig.redis_database,
-            encoding='utf-8',
-            decode_responses=True,
-        )
         try:
-            connection = await redis.ping()
+            tunnel = sshtunnel.SSHTunnelForwarder(
+                (SSHConfig.ssh_host, SSHConfig.ssh_port),
+                ssh_username=SSHConfig.ssh_username,
+                ssh_pkey=SSHConfig.ssh_key_path,
+                remote_bind_address=(RedisConfig.redis_host, RedisConfig.redis_port),
+                local_bind_address=('127.0.0.1', 0)  # 随机本地端口
+            )
+            tunnel.start()
+            local_port = tunnel.local_bind_port
+
+            redis_pool = aioredis.ConnectionPool(
+                host='127.0.0.1',
+                port=local_port,
+                username=RedisConfig.redis_username,
+                password=RedisConfig.redis_password,
+                db=RedisConfig.redis_database,
+                encoding='utf-8',
+                decode_responses=True,
+                socket_timeout=60,
+                socket_connect_timeout=60
+            )
+
+            redis_client = aioredis.Redis(connection_pool=redis_pool)
+
+            connection = await redis_client.ping()
             if connection:
                 logger.info('redis连接成功')
             else:
                 logger.error('redis连接失败')
+
+            # 在程序退出时关闭隧道
+            atexit.register(tunnel.close)
+
+            return redis_client
         except AuthenticationError as e:
             logger.error(f'redis用户名或密码错误，详细错误信息：{e}')
+            raise
         except TimeoutError as e:
             logger.error(f'redis连接超时，详细错误信息：{e}')
+            raise
         except RedisError as e:
             logger.error(f'redis连接错误，详细错误信息：{e}')
-        return redis
+            raise
+        except Exception as e:
+            logger.error(f'创建SSH隧道失败，详细错误信息：{e}')
+            raise
 
     @classmethod
     async def close_redis_pool(cls, app):
